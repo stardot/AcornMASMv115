@@ -1,0 +1,17 @@
+*|> AsmIoMasm
+*Masm
+w 78
+l 118
+asm Masm50
+
+get x.masm51
+53
+n&2000
+save NewIoMasm
+&2000
+&2000+&400
+&7800
+H
+&7800
+H
+*| The new 6502 Macro Assembler Host Code is NewIoMasm

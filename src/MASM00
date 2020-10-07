@@ -1,0 +1,508 @@
+        TTL     > Masm00 - Macro assembler - definitions file
+
+        OPT     4       ; New page on listing
+
+        <       1       ; Sources on drive 1
+        >       2       ; Objects on drive 2
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+
+; MANIFEST CONSTANTS
+; ==================
+
+
+; The version number
+
+VERA    * "1"
+VERB    * "1" ; Tutu
+VERC    * "5" ; Tutu
+
+        CPU     1       ; For the CMOS CPU only
+
+
+; The filing system numbers
+
+DFS     * 0 ; The normal DFS
+OTHER   * 1 ; NFS and WDFS
+
+FS      * other ; DFS ; The currently selected filing system
+
+
+; Assembler listing options
+
+NEWPAGE *       4
+LISTON  *       1
+LISTOFF *       2
+
+
+; Conditional assembly options
+
+        GBLL    $TRUE
+        GBLL    $FALSE
+$TRUE   SETL    1=1
+$FALSE  SETL    1=0
+
+        GBLS    $TUBECODE
+ [ $TURBO
+$TUBECODE SETS "MASM24" ; For the TURBO
+ |
+$TUBECODE SETS "MASM44" ; TUBE handling routine
+ ]
+
+        GBLL    $R6500
+$R6500  SETL    $FALSE  ; Assembly for the R6500/1 (with added BBR/RMB/SMB)?
+
+
+; Printing options
+
+DEFOPT  * LISTON :OR: NEWPAGE
+MASM00  * DEFOPT
+MASM01  * DEFOPT
+MASM02  * DEFOPT
+MASM03  * DEFOPT
+MASM05  * DEFOPT
+MASM06  * DEFOPT
+MASM07  * DEFOPT
+MASM08  * DEFOPT
+MASM09  * DEFOPT
+MASM10  * DEFOPT
+MASM11  * DEFOPT
+MASM12  * DEFOPT
+MASM13  * DEFOPT
+MASM14  * DEFOPT
+MASM15  * DEFOPT
+MASM16  * DEFOPT
+MASM17  * DEFOPT
+MASM18  * DEFOPT
+MASM19  * DEFOPT
+MASM20  * DEFOPT
+MASM21  * DEFOPT
+MASM22  * DEFOPT
+ [ $TURBO
+MASM24  * DEFOPT
+MASM30  * DEFOPT
+MASM31  * DEFOPT
+ |
+MASM44  * DEFOPT
+ ]
+
+        OPT     MASM00
+
+; System entry points
+
+OSFIND  * &FFCE
+OSBGBP  * &FFD1
+OSBPUT  * &FFD4
+OSBGET  * &FFD7
+OSARGS  * &FFDA
+OSFILE  * &FFDD
+OSRDCH  * &FFE0
+OSASCI  * &FFE3
+OSNEWL  * &FFE7
+OSWRCH  * &FFEE
+OSWORD  * &FFF1
+OSBYTE  * &FFF4
+OSCLI   * &FFF7
+
+
+; System indirections
+
+ERRPTR  * &FD   ; Pointer to the byte after a BRK
+USRVEC  * &200
+BRKVEC  * &202
+COMVEC  * &208
+BYTVEC  * &20A
+WORVEC  * &20C
+WRCVEC  * &20E
+RDCVEC  * &210
+FILVEC  * &212
+ARGVEC  * &214
+BGTVEC  * &216
+BPTVEC  * &218
+GPBVEC  * &21A
+FNDVEC  * &21C
+FSCVEC  * &21E
+EVTVEC  * &220
+
+
+; System function numbers
+
+ACKESC  * &7E ; Acknowledge Escape
+TOPMDX  * &85 ; Bottom of screen for mode X
+MODECH  * &16 ; Change mode on the vdu
+
+
+; Character values
+
+EOT      * &04 ; End of text marker
+BEL      * &07
+NL       * &0A
+FORMFEED * &0C
+CR       * &0D
+SPACE    * &20
+DEL      * &7F
+
+
+; Default printer layout
+
+DEFWID  * 80 ; Tutu - was 92 before !
+DEFLEN  * 60
+
+
+INLENGTH * 80 ; Input line size
+
+
+; The origin of the second processor code
+
+ [ $TURBO
+ORIGIN  * &B000
+ |
+ORIGIN  * &C000
+ ]
+
+
+ZEROAREA * 0   ; The start of the zero page variable area
+ZEROEND * &EE  ; The end of the zero page area
+
+PAGE1   * &100 ; The start of the page one variable area
+
+
+TXPAGE  * &301 ; Extra byte offset for the TURBO
+
+USRVOL  * 3    ; The area used for all GET and SAVE
+
+
+; The length of the global symbol table
+
+ [ $TURBO
+SYMRED  * &C :SHL: 4 ; Used in the hash function calculation
+ |
+SYMRED  * &C :SHL: 2 ; Used in the hash function calculation
+ ]
+SYMLEN  * SYMRED*5 :SHL: 6
+
+
+; The length of the local label table
+
+LOCLEN  * 3 * 3 :SHL: 10 ; 3k symbols
+
+
+; Global symbol table bits
+
+; Bits for assembly time variables
+
+LOGICAL * &60
+ARITHM  * &40
+STRING  * &20 ; Only three of the four possible cases exist
+GLOBAL  * &80 ; To distinguish global variables from local ones
+LOCAL   * &00
+
+; Bits for constants
+
+XBYTE   * &00
+FORCE   * &80
+NODEF   * &60
+SOMEDEF * &40
+CANTDEF * &20
+DEF     * &00
+
+; Offsets in the main symbol table
+
+STATOFF * 7  ; Offset of the status byte
+DATAOFF * 8  ; Offset of the value
+ENTOFF  * 10 ; Offset of the next symbol
+
+
+; Local label table bits
+
+EOLT    * &FF ; End of the table
+NEWRT   * &FE ; New routine
+SOLT    * &FD ; Start of table
+MACUP   * &FC ; Macro level depth decrease
+MACDOWN * &FB ; Macro level depth increase
+
+
+; Local label status bits
+
+BLOOK    * &80 ; Look backwards bit
+FLOOK    * &40 ; Look forwards bit
+ANYLEVEL * &30 ; Any macro level
+ABOVE    * &20 ; Current macro level and above
+TLEVEL   * &10 ; This macro level only
+
+
+; Fatal error numbers
+
+PAROVER  * 0 ; Macro parameter table overflow
+SYMOVER  * 1 ; Global symbol table overflow
+LOCVOVER * 2 ; Local variable table overflow
+LOCOVER  * 3 ; Local label table overflow
+ASMERR   * 4 ; Assembler error
+MACOVER  * 6 ; Macro definition table overflow
+WHOVER   * 7 ; While stack overflow
+MACERR   * 8 ; Bad attempted macro definition
+MACALR   * 9 ; Macro already exists
+EOTERR   * 10 ; End of text error
+MACOVR   * 11 ; Macro parameter table overflow
+BADF     * 12 ; Bad file name error
+BADFS    * 13 ; Bad filing system error
+BADQ     * 14 ; Bad qualifier error
+FTBIG    * 15 ; File too big
+USRERR   * 16 ; User error
+ESCAPE   * &11 ; Escape
+BADO     * &12 ; Bad option
+STOVER   * &13 ; Stack overflow
+STERR    * &14 ; Stack inderflow
+MDERR    * &15 ; Macros too deeply nested
+STFAULT  * &16 ; Stack fault
+HEAPOVER * &17 ; Heap overflow
+ESTOVER  * &18 ; Expression stack overflow
+OVWRITE  * &19 ; Code overwriting source
+EINMAC   * &1A ; END or LNK statement inside macro
+BADASS   * &1B ; Assert failed
+BADMNOTE * &1C ; Bad MNOTE
+BADEXP   * &1D ; Bad expression
+BADP     * &1E ; Bad Processor
+
+
+; Non-fatal error numbers
+
+        ^ 1
+LNOVER  # 1 ; Line too long
+EXOVER  # 1 ; Expansion line too long
+CRMISS  # 1 ; End of line character missing
+BADLOC  # 1 ; Bad local label number
+BADROUT # 1 ; Bad routine name
+BADOPC  # 1 ; Bad opcode
+BADLAB  # 1 ; Bad label definition
+DDLAB   # 1 ; Doubly defined label
+BADSYN  # 1 ; Syntax error
+BADDIR  # 1 ; Bad directive use
+DDVAR   # 1 ; Doubly defined variable name
+NOTINM  # 1 ; Not in macro for LCL directive
+DIRTL   # 1 ; Too late for LCL type directive
+BADOP   # 1 ; Bad operand
+BADOPE  # 1 ; Bad operator
+BADMAN  # 1 ; Bad manifest symbol
+BADTYPE # 1 ; Expression type mismatch
+DIVZERO # 1 ; Division by zero
+BADSTR  # 1 ; Bad string size request
+UNDSYMB # 1 ; Undefined symbol
+BADOFF  # 1 ; Bad offset for relative branch
+BADZP   # 1 ; Bad zero page value
+BADORG  # 1 ; Too late for origin directive
+BADCOND # 1 ; ELSE or FI without matching [
+BADWEND # 1 ; Missing WHILE
+BADDRV  # 1 ; Drive number out of range
+BADCPU  # 1 ; Too late for CPU directive
+UNKVAR  # 1 ; Unknown variable
+OPTBAD  # 1 ; Bad OPT directive
+BADJMI  # 1 ; Bad JMI (over page boundary)
+
+
+; Opcode status bits
+
+ANYTWO * &00 ; Any value allowed, two byte expression generated
+ANYONE * &01 ; Any value allowed, one byte expression generated
+ZPONLY * &02 ; Zero page value only allowed
+ZPOPT  * &03 ; Zero page option allowed
+RELBR  * &04 ; Relative branch
+NOOPND * &05 ; No operand
+        [ $R6500
+BBRTYPE * &06 ; BBR type opcode
+RMBTYPE * &07 ; RMB type opcode
+        ]
+C6502   * &80 ; CMOS 6502 opcode only, not available on standard machine
+
+
+; Bits for four letter opcodes
+
+ZEND    * &01 ; Ending of Z allowed
+AEND    * &02 ; Ending of A allowed
+IEND    * &04 ; Ending of I allowed
+
+
+; OSWORD calls for communication with the host processor
+
+OSWREQ  * 8   ; The byte to tell the tube that this is an OSWORD
+
+OSWBASE * &E0 ; The lowest call routable through the user vector
+
+        ^ OSWBASE ; Easiest way to allocate OSWORDS contiguously
+HOSTCOLD # 1 ; Cold start the software in the host
+GMLINE   # 1 ; Get line from current macro expansion
+EMEXP    # 1 ; End current macro expansion
+OPCMAC   # 1 ; Expand this opcode as a macro
+DTABGET  # 1 ; Get the parameter default block for the current macro
+PTABGET  # 1 ; Get the parameter value block and local variable tables
+NEWMAC   # 1 ; Add a new macro name to the definitions
+DNEWMAC  # 1 ; Add parameter default to the definitions
+PNEWMAC  # 1 ; Add parameter block to the definitions
+LNEWMAC  # 1 ; Next line of new macro definition
+ENEWMAC  # 1 ; End current macro definition
+SWHILE   # 1 ; Mark start of while loop at current line
+RWHILE   # 1 ; Return to start of current while
+EWHILE   # 1 ; End current WHILE
+MAXUOSW  # 0 ; The maximum user OSWORD recognized
+
+; Check not too many OSWORDS
+
+ [ @ - &100 :SHR: 15 = 0
+ ! 0,"Too many user OSWORDS"
+ ]
+
+
+; Tube registers - Parasite side
+
+R2STAT  * &FEFA ; Parasite register 2 status
+R2DATA  * &FEFB ; Parasite register 2 data
+
+
+; Directive token numbers
+
+        ^ 0
+TEND    # 1 ; END token 0
+TLNK    # 1 ; LNK token 1
+TORG    # 1 ; ORG token 2
+TOPT    # 1 ; OPT token 3
+TTTL    # 1 ; TTL token 4
+TWHILE  # 1 ; WHILE token 5
+TWEND   # 1 ; WEND token 6
+TMACRO  # 1 ; MACRO token 7
+TMEXIT  # 1 ; MEXIT token 8
+TMEND   # 1 ; MEND token 9
+TGBLA   # 1 ; GBLA token 10
+TGBLL   # 1 ; GBLL token 11
+TGBLS   # 1 ; GBLS token 12
+TLCLA   # 1 ; LCLA token 13
+TLCLL   # 1 ; LCLL token 14
+TLCLS   # 1 ; LCLS token 15
+TSETA   # 1 ; SETA token 16
+TSETL   # 1 ; SETL token 17
+TSETS   # 1 ; SETS token 18
+TIF     # 1 ; IF THEN token [ 19
+TELSE   # 1 ; ELSE token | 20
+TFI     # 1 ; FI token ] 21
+TMNOTE  # 1 ; MNOTE token ! 22
+THASH   # 1 ; HASH token # 23
+TSTAR   # 1 ; STAR token * 24
+TEQUAL  # 1 ; EQUAL token = 25
+TPERC   # 1 ; PERCENT token % 26
+TAMP    # 1 ; AMPERSAND token & 27
+THAT    # 1 ; HAT token ^ 28
+TSDRV   # 1 ; SDRV token < 29
+TODRV   # 1 ; ODRV token > 30
+TASSERT # 1 ; Assert token 31
+TCPU    # 1 ; CPU token 32
+TROUT   # 1 ; ROUT token 33
+
+
+; FS operation codes
+
+RDDRV   *   6 ; Read drive number from OSBGBP (DFS only)
+DLOAD   * &FF ; Load data using OSFILE
+DSAVE   * &00 ; Save data using OSFILE
+CREAD   * &05 ; Read catalogue using OSFILE
+
+
+; Stack type bytes
+
+SCOND   * 0 ; Conditional assembly
+SWHIL   * 1 ; WHILE loop
+SMACR   * 2 ; MACRO expansion
+
+; MSTACK tokens
+
+MMACRO  * &80
+MWHILE  * &00
+
+
+; Operator token values
+
+; Binary operators first
+
+STBOT   * 0 ; Bottom of stack
+STTOP   * 1 ; Top of stack
+BRA     * 2 ; (
+KET     * 3 ; )
+LAND    * 4 ; Logical AND
+LOR     * 5 ; Logical OR
+LEOR    * 6 ; Logical EOR
+LESS    * 7 ; <
+EQ      * 8 ; =
+LEQ     * 9 ; <=
+GREA    * 10 ; >
+NEQ     * 11 ; /=
+GREQ    * 12 ; >=
+PLUS    * 13 ; +
+MINUS   * 14 ; -
+ROR1    * 15 ; 8 bit rotate
+ROR2    * 16 ; 16 bit rotate
+ROL1    * 17 ; 8 bit rotate
+ROL2    * 18 ; 16 bit rotate
+SHR1    * 19 ; 8 bit shift
+SHR2    * 20 ; 16 bit shift
+SHL1    * 21 ; 8 bit shift
+SHL2    * 22 ; 16 bit shift
+BAND    * 23 ; Bitwise AND
+BOR     * 24 ; Bitwise OR
+BEOR    * 25 ; Bitwise EOR
+LEFT    * 26 ; Take left hand end of string
+RIGHT   * 27 ; Take right hand end of string
+CC      * 28 ; Concenate strings
+STAR    * 29 ; * (Multiply)
+SLASH   * 30 ; / (Divide)
+MOD     * 31 ; Remainder
+
+; Now the unary operators
+
+UPLUS   * 32 ; Unary +
+UMINUS  * 33 ; Unary -
+BNOT    * 34 ; Bitwise NOT
+LNOT    * 35 ; Logical NOT
+LSB     * 36 ; Take least byte
+MSB     * 37 ; Take highest byte
+LEN     * 38 ; Length of string
+SHRIEK  * 39 ; Set top bit of bottom byte
+CHR     * 40 ; Generate character value
+USLASH  * 41 ; Byte swop
+STR     * 42 ; Coerce arithmetic to string
+
+
+; The token types
+
+OPERATOR * 0
+ITEM     * 1
+BRATYPE  * 2
+UNKNOWN  * &FF
+
+
+; The operand types
+
+MANSTR   * 0   ; Manifest string
+MANLOG   * 1   ; Manifest logical
+MANARITH * 2   ; Manifest arithmetic
+SYMSTR   * &80 ; String symbol
+SYMLOG   * &81 ; Logical symbol
+SYMARITH * &82 ; Arithmetic symbol
+SYMUNK   * &83 ; Undefined symbol
+SYMBAD   * &84 ; Badly defined symbol
+
+
+; Code numbers for the option directive
+
+OPTON   * 1 ; Printing on
+OPTOFF  * 2 ; Printing off
+OPTNEW  * 4 ; New page
+OPTLN   * 8 ; Restart line numbers
+MAXOPT  * 16
+
+
+FILLEN  * 10 ; File name length
+
+
+        LNK     MASM01  ; End of manifest constants file

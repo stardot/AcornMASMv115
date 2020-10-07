@@ -1,0 +1,897 @@
+ TTL File cataloging utility a general enviroment > MyStampHdr
+
+; **********************************************************
+; *****                                                *****
+; *****           C  O  N  S  T  A  N  T  S            *****
+; *****                                                *****
+; **********************************************************
+
+TRUE * 0
+YES * TRUE
+FALSE * &FFFF
+NO * FALSE
+
+MINUS1 * &FFFF
+ZERO * 0
+ONE * 1
+TWO * 2
+THREE * 3
+FOUR * 4
+FIVE * 5
+SIX * 6
+SEVEN * 7
+EIGHT * 8
+NINE * 9
+TEN * 10
+ELEVEN * 11
+TWELVE * 12
+
+; **********************************************************
+; *****                                                *****
+; *****    T H E   M O S   E N T R Y   P O I N T S     *****
+; *****                                                *****
+; **********************************************************
+
+OSRDRM * &FFB9 ; Y is the ROM to read ROMPTR is the address
+; data returned in A , both X and Y destroyed.
+GSINIT * &FFC2
+GSREAD * &FFC5
+OSFIND * &FFCE
+OSGBPB * &FFD1
+OSBPUT * &FFD4
+OSBGET * &FFD7
+OSARGS * &FFDA
+OSFILE * &FFDD
+OSRDCH * &FFE0
+OSASCI * &FFE3
+OSNEWL * &FFE7
+OSCRLF * OSNEWL
+OSWRCH * &FFEE
+OSWORD * &FFF1
+OSBYTE * &FFF4
+OSCLI * &FFF7
+
+; MOS variables
+
+LINE * &F2
+ROMID * &F4
+ROMPTR * &F6
+ESCFLG * &FF
+
+ROMTAB * &2A1
+
+ROMLATCH * &FE30
+
+; **********************************************************
+; *****                                                *****
+; *****       T H E   C H A R A C T E R   S E T        *****
+; *****                                                *****
+; **********************************************************
+
+NUL * 0 ; Does nothing
+SOH * 1 ; Send next char to printer only
+STX * 2 ; Enable printer
+ETX * 3 ; Disable printer
+EOT * 4 ; Write text at text cursor
+ENQ * 5 ; Write text at graphics cursor
+ACK * 6 ; Enable VDU drivers
+BEL * 7 ; Make a racket
+BS * 8 ; Backspace the cursor one character
+HT * 9 ; Forwardspace the cursor one character
+LF * 10 ; Move the cursor down one line
+VT * 11 ; Move the corsor up one line
+FF * 12 ; Clear the text area
+CR * 13 ; Move the cursor to the start of the current line
+SO * 14 ; Page mode on
+SI * 15 ; Page mode off
+DLE * 16 ; Clear the graphics area
+DC1 * 17 ; Define text colour
+DC2 * 18 ; Define graphics colour
+DC3 * 19 ; Define logical colour
+DC4 * 20 ; Restore default logical colours
+NAK * 21 ; Disable VDU drivers or delete current line
+SYN * 22 ; Select screen mode
+ETB * 23 ; Re-program display character
+CAN * 24 ; Define graphics window
+EM * 25 ; PLOT K,x,y
+SUB * 26 ; Restore default windows
+ESC * 27 ; Does nothing ?
+FS * 28 ; Define text window
+GS * 29 ; Define graphics origin
+RS * 30 ; Home text cursor to top left corner
+US * 31 ; Move text cursor to x,y
+SPACE * " " ; What else ?
+HASH * "#" ; For wild cards ?
+BUX * "$" ; The root
+DOT * "." ; Well known separator
+COLON * ":" ; A lesser known separator
+DEL * &7F ; Backspace and delete
+comma * "," ; An even lesser known separator
+
+; **********************************************************
+; *****                                                *****
+; *****      T H E   P R I N T   C O N T R O L S       *****
+; *****                                                *****
+; **********************************************************
+
+NOLIST * 2 ; Turn printing off
+LIST * 5   ; Turn printing on and start a new page
+NEWPAGE * 4 ; Start a new page in the listing
+
+; Generaly, these should be changed for gross effect
+
+HEDLST * LIST ; The Header
+
+params * one ; Arg for osargs to read the address of the rest of the command line
+inonly * &40 ; Openin via osfind
+
+; *** FILE SERVER CODES ***
+
+FCSAVE * &0001 ;save
+FCLOAD * &0002 ;load
+FCEXAM * &0003 ;examine
+FCCHDR * &0004 ;catalogue
+FCCMND * &0005 ;load as command
+FCFIND * &0006 ;find/open
+FCSHUT * &0007 ;close
+FCBGET * &0008 ;getbyte
+FCPUTB * &0009 ;putbyte
+FCGBYS * &000A ;getbytes
+FCPBYS * &000B ;putbytes
+FCGARG * &000C ;read pointer/extent of open file
+FCSARG * &000D ;set the pointer/extent of open file
+FCDISC * &000E ;returns the current discs
+FCUSRS * &000F ;returns logged-on users
+FCEOF * &0011 ;end-of-file
+FCREAD * &0012 ;read args
+FCSET * &0013 ;set args
+FCDEL * &0014 ;code for delete
+FCUSER * &0015 ;read user environment
+FCOPT * &0016 ;set AUTOBOOT option number
+FCBYE * &17 ; Logoff (*BYE) code
+FCUINF * &18 ; Read user info
+
+; *** FX CODES
+
+FXSYNC * &13 ; Wait for Vsync
+FXSPEX * &77 ; Close SPOOL and EXEC files
+fxvdus * &75 ; Read VDU status
+FXREAD * &A1 ; Read CMOS RAM
+FXvduq * &DA ; The FX call to check q status
+
+; *** PORTS ***
+
+PREMOT * &0093 ;remote port
+
+; *** Error numbers ***
+
+ESCER * &11
+
+; *** selectors in Control block ***
+
+DESTN * &0002 ;destination part of packet
+
+; *** Context info held in page #E00 ***
+
+ADFSOPT * &1120
+NFSOPT * &E06 ; Message switch
+ERROR * &E09 ; Slot for last unknown error
+
+; *** Manifests for useful things ***
+
+FILLER * &FFFF ;padding for 4-byte addresses
+FSTRY * &FF ;number of retries
+RXCBS * &12 ;number of RXCBs available
+
+; *** Zero page workspace, starting from #B8 ***
+
+TXCBP * &00A0 ;pointer used with lo level
+TIME * &B8 ;three bytes used for timing purposes
+POINTR * &BE
+LFLAG * &0D38 ;flag byte used for T/Rx
+TBFLAG * &0D55 ;TUBE present flag, held by BRIAN
+LSTAT * &0D63 ;copy of PEEK, POKE status
+
+; **** Low level variables etc ****
+
+WORK * &B0 ;space for variables
+W1 * WORK +&02
+W2 * W1 +&01 ;spare work variables
+RXCBP * &A0 ;complement to $23D in V2
+
+R0 * &00C0 ;dedicated FS workspace
+R1 * R0 + 1
+R2 * R1 + 1 ;dedicated slots for remote
+R3 * R2 + 1
+R4 * R3 + 1
+
+TXCB * POINTR +&02 ;temp only
+RXCB * TXCB ;note blocks overlap exactly
+ROMY * RXCB + &0D ;save slot for Rom number
+ROMA * ROMY +&01
+
+; **** Area reserved, not to be used again ****
+
+RSTAT * &E0D
+R6845 * &FE00
+D6845 * &FE01
+
+PFLAGS * &0D60 ;NMI dedicated slot
+PBUFFP * PFLAGS + &01 ;*** dedicated area somewhere ***
+PWORK1 * PBUFFP +&01
+
+ROFF * &000A
+
+RWRITE * &0000
+RWORD * &0001
+RBYTE1 * &0002
+RBYTE2 * &0003
+
+; *** Manifest offsets in the static area (2) ***
+
+PRXCB * &00 ;offset from start of page
+PTXCB * &0000
+PSLOCN * PTXCB +&02 ;located inside the CB
+UFSCB * &0024 ;dedicated CB for DOFSOP's
+RTXCB * &000C
+BUFFER * RXCBS * &0C +&1 ;lowest area available
+DATA1 * BUFFER +&01
+DATA2 * DATA1 +&01
+DATA3 * DATA2 +&01 ;pointers into the 4 byte data area
+DATA4 * DATA3 +&01
+VBUFF * &E9 ;offset in page2
+
+; *** Manifest offsets in the static area (1) ***
+
+SAVEAR * &0000 ;save area over OSWORD calls
+STAT1 * SAVEAR +&04;first status byte
+STAT2 * STAT1 +&01 ;second status byte
+SAVELO * STAT2 +&01;low level save area
+SAVEHI * SAVELO +&10 ;high level save area
+PBUFF * SAVEHI +&0A ;start of printer buffer
+JSRBUF * &0080 ;start of JSR buffer
+JSRSIZ * JSRBUF -&01 ;counter for JSR args
+UTXCB * JSRSIZ -&10 ;user TXCB
+PSIZE * UTXCB - PBUFF ;as much space as is available
+
+; *** dedicated pointers ***
+
+; WORKP1 * &009E ;pointer to workarea[must be 0-page]
+DYNVC2 * &9E
+
+; **********************************************************
+; *****                                                *****
+; *****       M A C R O   D E F I N I T I O N S        *****
+; *****                                                *****
+; **********************************************************
+
+ MACRO
+ HEXOUT
+HexByte PHP
+ PHA
+ LSRA
+ LSRA
+ LSRA
+ LSRA
+ JSR HexNibble
+ PLA
+ PLP
+HexNibble
+ PHP
+ PHA
+ ANDIM 15
+ CMPIM TEN
+ BCC .+2
+ ADCIM SIX
+ ADCIM "0"
+ JSR OSASCI
+ PLA
+ PLP
+ RTS
+ MEND
+
+ MACRO
+$Label LODXY $Address
+$Label LDXIM :LSB: $Address
+ LDYIM :MSB: $Address
+ MEND
+
+ MACRO
+$label PHX
+$label TXA
+ PHA
+ MEND
+
+ MACRO
+$label PHY
+$label TYA
+ PHA
+ MEND
+
+ MACRO
+$label PLX
+$label PLA
+ TAX
+ MEND
+
+ MACRO
+$label PLY
+$label PLA
+ TAY
+ MEND
+
+        TTL     > MyStamp - STAMP files/all directory entries
+
+        GBLL    $fromnet
+$fromnet SETL   1=0
+
+        GBLL    $master
+$master SETL    1=1
+
+ [ $fromnet
+Origin  *       &2D00
+ |
+  [ $master
+Origin  *       &DD00           ; Utility workspace
+  |
+Origin  *       &0900           ; 'Wini' type utility workspace
+  ]
+ ]
+
+        ORG     Origin
+
+        ^       .               ; NB. Variables overlay start of code area
+
+FSactive #      1               ; Wot filing system we're on
+
+ [ $fromnet
+NewTime #       5               ; Otherwise we run out of room
+ ]
+
+fileblk #       0               ; Block for OsFile
+fileptr #       2
+fileload #      4
+fileexec #      4
+filelen #       4
+fileatt #       4
+
+os13blk #       0               ; Block for OsWord &13 operations
+os13fun #       1 ; Function
+os13urd #       1 ; URD
+os13csd #       1 ; CSD
+ocsl    #       1 ; CSL
+
+gbpbblk #       0               ; Block for OSGBPB 8 to read filenames
+gbpbhan #       1
+gbpbptr #       4
+gbpbnum #       4
+gbpbdir #       4
+
+endofws #       0
+
+        LDAIM   0       ; Always read current filing system type
+        TAY
+        LDXIM   :LSB: ztemp
+        JSR     OsArgs
+ ASSERT . > FSactive
+        STA     FSactive
+
+ [ $fromnet
+SetTime ROUT
+
+ LDYIM 5 ;Start the net filing system
+ JSR StartFS
+
+ LDAIM &14 ;Do an FS op
+ LODXY STDATA ;Read the time
+ JSR OSWORD
+
+ LDXIM FOUR
+10 ;Set up the base year in the time register
+ LDAAX BASEYEAR
+ STAAX NewTime
+ DEX
+ BPL #10
+
+ LDA STTIME + ONE ;The year
+ LSRA
+ LSRA
+ LSRA
+ LSRA
+ PHA ;Save the year so we know if its a leap or not
+ TAY
+ BEQ #30 ;Done all the years
+15 TYA
+ ANDIM 3
+ CMPIM 3
+ BNE #20 ;Not a leap year
+ JSR ADDDAY
+20 JSR ADDYEAR
+ DEY
+ BNE #15
+30 LDA STTIME + ONE
+ ANDIM 15 ;The month 1 to 12
+ TAY
+ PLA
+ ANDIM 3
+ CMPIM 3
+ BNE #40 ;Not a leap year
+ TYA
+ CMPIM 3 ;Have we passed the extra day ?
+ BCC #40 ;No
+ JSR ADDDAY ;Add in the leap day
+40 DEY ;Now 0 to 11
+ BEQ #50 ;Nothing to do in January
+ DEY ;Now 0 to 10 for 1 to 11
+ CLC
+ LDAAY STMLO
+ ADC NewTime + ONE
+ STA NewTime + ONE
+ LDAAY STMMID
+ ADC NewTime + TWO
+ STA NewTime + TWO
+ LDAAY STMHI
+ ADC NewTime + THREE
+ STA NewTime + THREE
+ LDAIM ZERO
+ ADC NewTime + FOUR
+ STA NewTime + FOUR
+
+50 LDY STTIME ;Day of the month
+55 DEY
+ BEQ #60
+ JSR ADDDAY
+ JMP #55
+
+60 LDY STTIME + TWO ;Hours
+65 DEY
+ BMI #70
+ JSR ADDHOUR
+ JMP #65
+
+70 LDA STTIME + THREE ;Minutes
+ PHA
+ LSRA
+ LSRA
+ LSRA
+ LSRA
+ TAY
+75 DEY
+ BMI #80
+ JSR ADD16MIN
+ JMP #75
+80 PLA
+ ANDIM &F
+ TAY
+85 DEY
+ BMI #86
+ JSR ADDMIN
+ JMP #85
+
+86 LDA STTIME + FOUR ;Seconds - Tutu
+ PHA
+ LSRA
+ LSRA
+ LSRA
+ LSRA
+ TAY
+87 DEY
+ BMI #88
+ JSR ADD16SEC
+ JMP #87
+88 PLA
+ ANDIM &F
+ TAY
+89 DEY
+ BMI #90
+ JSR ADDSEC
+ JMP #89
+
+90 LDAIM TWO ;Write system clock
+ LODXY NewTime
+ JSR OSWORD
+
+ LDY FSactive
+ JSR STARTFS
+
+ ]
+        ^       &A8             ; ZP variable allocation
+ztemp   #       2
+m2temp  *       ztemp           ; ztemp not used after getting file/cmd tail
+ytemp   #       1
+reg1    #       5
+        ASSERT  @ <= &B0
+
+filetype *      1
+dirtype *       2
+
+Net     *       5
+Adfs    *       8
+
+MyStamp
+
+ [ :LNOT: $fromnet
+        LODXY   NewTime
+        LDAIM   1               ; Read internal timer
+        JSR     OsWord
+ ]
+
+        LODXY   ztemp           ; Read address of command tail
+        LDAIM   1
+        JSR     OsArgs
+
+        LDYIM   0               ; If no command tail then error
+        LDAIY   ztemp
+        CMPIM   CR
+        BEQ     BadSyntax
+
+ ASSERT . > endofws
+
+; .............................................................................
+
+TopStampLoop ROUT ; Attempt to iterate over objects on command line
+
+        JSR     StampThisBatman ; Process this object
+
+        LDYIM   &FF
+10      INY
+        LDAIY   ztemp           ; Skip over the object name we just did
+        CMPIM   " "+1
+        BPL     #BT10
+
+        CMPIM   CR              ; Finished the lot ?
+        BEQ     #FT99
+
+20      INY
+        LDAIY   ztemp           ; Skip over spaces to next object name
+        CMPIM   " "
+        BEQ     #BT20
+
+        CMPIM   CR              ; Finished the lot ?
+        BEQ     #FT99
+
+        TYA
+        CLC
+        ADC     ztemp
+        STA     ztemp
+        BCC     TopStampLoop
+        INC     ztemp+1
+        BNE     TopStampLoop    ; BRA
+
+99      RTS
+
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+StampThisBatman ROUT
+
+        LDX     ztemp           ; What sort of object is it ?
+        LDY     ztemp+1
+        JSR     DoFyl5          ; Sets flags
+        BEQ     DoFylBranch
+        TAY
+        BEQ     NotFound        ; BRK
+
+
+        LDA     FSactive        ; Actions for getting into a dir are different
+        CMPIM   Net
+        BEQ     #30
+
+        LDYIM   &FF             ; For adfs, we'll have to do *DIR object
+20      INY
+        LDAIY   ztemp
+        CMPIM   " "+1           ; Space or CR terminates
+        BCS     #FT25
+        LDAIM   CR              ; Always put CR in
+25      STAAY   ThisName
+        BCS     #BT20
+
+        LODXY   DirName
+        JSR     OsCli
+        JMP     GotPath
+
+
+DoFylBranch                     ; Bloody inadequate processor !
+        JMP     DoFile
+
+
+Esker   LDAIM   126
+        JSR     OsByte
+        JSR     DirClose
+
+        BRK
+        =       17, "Escape"
+;        BRK
+
+BadSyntax
+        BRK
+        =       0, "Syntax : *Stamp <dir|file> ..."
+;        BRK
+
+NotFound
+        BRK
+        =       0, "Not found"
+        BRK
+
+
+30      LDAIM   6               ; Read CSD into block
+        JSR     DoOs13
+
+        LDX     ztemp           ; On Net, swap CSD and the dir's handle
+        LDY     ztemp+1
+        LDAIM   &40
+        JSR     OsFind
+        TAY
+        BEQ     NotFound
+
+        LDA     os13csd         ; Preserve real CSD so we can get back
+        STA     CsdHandle
+        STY     os13csd
+
+        JSR     WriteCSD
+
+; .............................................................................
+
+GotPath ROUT ; On net, we've got env set up / adfs we're in correct dir
+
+        LDAIM   0
+        STA     gbpbdir         ; Start at first file
+        STA     gbpbdir+1
+        STA     gbpbdir+2
+        STA     gbpbdir+3
+
+; .............................................................................
+; Loop over files in the dir, stamping them
+
+MainLoop ROUT
+
+        BIT     &FF             ; Test for Escape
+        BMI     Esker
+
+        LODXY   ThisName
+        STX     gbpbptr
+        STY     gbpbptr+1
+        LDAIM   &FF
+        STA     gbpbptr+2       ; I/O processor addresses
+        STA     gbpbptr+3
+
+        LDAIM   1               ; Just one file please
+        STA     gbpbnum
+        LDAIM   0
+        STA     gbpbnum+1
+        STA     gbpbnum+2
+        STA     gbpbnum+3
+
+        LODXY   gbpbblk
+        LDAIM   8               ; Read a name from CSD
+        JSR     OsGbPb
+
+        LDA     gbpbnum         ; Failed to read a file ?
+        BNE     DirClose        ; Go home if so
+
+        LDAIM   CR              ; Terminate filename
+        STA     ThisName+11
+
+        LODXY   (ThisName+1)    ; Byte at ThisName is its length byte
+        JSR     DoObject
+        JMP     MainLoop
+
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; Process the file, YX -> filename
+
+DoObject ROUT
+
+        JSR     DoFyl5          ; Sets flags
+        BNE     AnRts
+
+; .............................................................................
+
+DoFile ROUT
+
+        LDA     fileload+1      ; Is the file already date stamped ?
+        ORAIM   &0F             ; Only top five nibbles need be &F
+        AND     fileload+2
+        AND     fileload+3
+        CMPIM   &FF             ; Is so, don't overwrite type nibble
+        BEQ     #FT05
+
+        LDAIM   &FF             ; Otherwise stamp assuming unrunnable text
+        STA     fileload+1
+        STA     fileload+2
+        STA     fileload+3
+
+05      LDA     NewTime+4
+        STA     fileload
+
+        LDXIM   3
+10      LDAAX   NewTime
+        STAAX   fileexec
+        DEX
+        BPL     #10
+
+        LDAIM   1       ; Write the date/time as the file's new load/exec
+        LODXY   fileblk
+        JMP     OsFile
+
+AnRts   RTS
+
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; Get back to where we were before entering the dir
+
+DirClose ROUT
+
+        LDA     FSactive
+        CMPIM   Net
+        BNE     #FA20
+
+        LDY     CsdHandle       ; Don't shut down our real CSD !
+        BEQ     AnRts
+
+        LDY     os13csd         ; Close down current CSD if Net
+        LDAIM   0
+        JSR     OsFind
+
+        LDA     CsdHandle       ; Write real CSD back to regain sanity
+        STA     os13csd
+        LDAIM   0               ; Clear the CSD handle for reuse
+        STA     CsdHandle
+        BEQ     WriteCSD        ; BRA
+
+
+20      LODXY   BackStr         ; Do '*BACK' if adfs
+        JMP     Oscli
+
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+WriteCSD
+        LDAIM   7
+
+DoOs13  STA     os13fun         ; Store the function
+        LODXY   os13blk
+        LDAIM   &13
+        JMP     OsWord
+
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; In : YX -> filename, CR. Z set if object is a file
+
+DoFyl5  LDAIM   5
+        STX     fileptr
+        STY     fileptr+1
+        LODXY   fileblk
+        JSR     OsFile
+        CMPIM   filetype
+        RTS
+
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+CsdHandle =     0       ; Real CSD handle. Preset zero but reset every time
+
+BackStr =       "BACK", CR
+
+DirName =       "DIR "
+
+ [ $fromnet
+ThisName ; %      11      ; Longest possible name + length byte + CR
+; Overwrites some code
+ |
+ThisName  %     11      ; Longest possible name + length byte + CR
+
+NewTime   %     5
+ ]
+
+ [ $fromnet
+; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; Crap that can be overwritten later when we've got the network time
+
+ADDMIN ROUT
+
+ LDAIM :LSB: MIN
+ STA ADDBASE
+ LDAIM :MSB: MIN
+ STA ADDBASE + ONE
+ BNE #95
+
+ADD16MIN
+ LDAIM :LSB: MIN16
+ STA ADDBASE
+ LDAIM :MSB: MIN16
+ STA ADDBASE + ONE
+ BNE #95
+
+ADDHOUR
+ LDAIM :LSB: HOUR
+ STA ADDBASE
+ LDAIM :MSB: HOUR
+ STA ADDBASE + ONE
+ BNE #95 ;BRA
+
+ADDDAY
+ LDAIM :LSB: DAY
+ STA ADDBASE
+ LDAIM :MSB: DAY
+ STA ADDBASE + ONE
+ BNE #95 ;BRA
+
+ADDYEAR
+ LDAIM :LSB: YEAR
+ STA ADDBASE
+ LDAIM :MSB: YEAR
+ STA ADDBASE + ONE
+ BNE #95 ;BRA
+
+95 LDXIM ZERO
+ CLC
+ PHP
+96 PLP
+ LDAAX . ;Self modifying code - Yuk
+ADDBASE * . - TWO
+ ADCAX NewTime
+ STAAX NewTime
+ PHP
+ INX
+ CPXIM FIVE
+ BCC #96
+ PLP
+ RTS
+
+ADDSEC
+ LDAIM :LSB: SEC
+ STA ADDBASE
+ LDAIM :MSB: SEC
+ STA ADDBASE + ONE
+ BNE #95
+
+ADD16SEC
+ LDAIM :LSB: SEC16
+ STA ADDBASE
+ LDAIM :MSB: SEC16
+ STA ADDBASE + ONE
+ BNE #95
+
+BASEYEAR
+ = &00, &36, &CE, &83, &3B ;00:00:00 1st Jan 1981
+YEAR
+ = &00, &1E, &F8, &BB, &00
+DAY
+ = &00, &D6, &83, &00, &00
+HOUR
+ = &40, &7E, &05, &00, &00
+MIN16
+ = &00, &77, &01, &00, &00
+MIN
+ = &70, &17, &00, &00, &00
+SEC16
+ = &40, &06, &00, &00, &00 ; Added by Tutu
+SEC
+ = &64, &00, &00, &00, &00 ; Added by Tutu
+
+STMLO
+ = &EA,&52,&3C,&50,&3A,&4E,&38,&22,&36,&20,&34
+STMMID
+ = &F6,&62,&59,&CC,&C3,&36,&2D,&24,&97,&8E,&01
+STMHI
+ = &0F,&1E,&2E,&3D,&4D,&5D,&6D,&7D,&8C,&9C,&AC
+
+STARTFS
+ LDAIM 143
+ LDXIM 18
+ JMP OSBYTE
+
+STDATA
+ = ZERO
+ = TEN ;Size of block
+ = ZERO
+ = 16 ;Get the time
+STTIME
+ = 0,0,0 ;Handle slots
+ % 7
+ ]
+
+ [ Origin = &0900
+        ASSERT  . <= &0B00
+ ]
+ [ Origin = &DD00
+        ASSERT  . <= &DF00
+ ]
+
+
+        END

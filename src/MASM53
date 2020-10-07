@@ -1,0 +1,112 @@
+        TTL     > Masm53 - Macro assembler - I/O processor utilities part 2
+        OPT     MASM53
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; I/O PROCESSOR SIDE CODE
+; =======================
+
+
+; ====
+; LOOK
+; ====
+;
+; Look for a macro name in the macro name table
+;
+; ENTRY:- BYTEX,BYTEY point to symbol
+;
+; EXIT:-  C = 0 <=> symbol found
+;         MACPTR points to symbol, or slot of least greater symbol
+;         (MACPTR),Y points to value
+;         No other registers preserved
+
+LOOK    LDA     MACNAME
+        STA     MACPTR
+        LDA     MACNAME+1
+        STA     MACPTR+1 ;Point to start of table
+
+LOOK10  CMPIM   /IOORG-1
+        BCS     LOOK40 ;Return if empty table
+
+LOOK20  LDYIM    0
+
+LOOK30  LDAIY   BYTEX ;Get character from symbol
+        CMPIY   MACPTR ;Look in table
+        BNE     LOOK50 ;Branch if mismatch
+        INY
+        CPYIM    6
+        BCC     LOOK30 ;Loop till end of symbol
+        CLC
+LOOK40  RTS
+
+LOOK50  BCC     LOOK60 ;Branch if less than current symbol
+        LDA     MACPTR
+        ADCIM    7 ;On to next symbol (note C was 1)
+        STA     MACPTR
+        BCC     LOOK20 ;Branch if no high byte overflow
+        INC     MACPTR+1
+        LDA     MACPTR+1
+        BCS     LOOK10 ;Branch always to check for end of table
+
+LOOK60  SEC
+        RTS     ;Return not found
+
+
+; =======
+; ONSTACK
+; =======
+;
+; Attempt to put macro or while information on the stack
+;
+; ENTRY:- A = type
+;
+; EXIT:-  All registers and flags preserved
+;         BRK if stack exhausted
+
+ONSTACK PHP
+        PHA
+        STA     TEMP ;Save type
+        TXA
+        PHA
+        TYA
+        PHA
+        LDXIM   CURLINE ;Assume WHILE stacking
+        LDA     STAPTR
+        TAY
+        CLC
+        ADCIM   FRAME
+        BCS     ONST20 ;Branch if run out of stack
+        STA     STAPTR
+        LDA     TEMP ;Get type back
+        BPL     ONST10 ;Branch if WHILE
+        LDXIM   MACLINE
+
+ONST10  STAAY   STACK+4
+        LDAAX   0
+        STAAY   STACK
+        LDAAX   1
+        STAAY   STACK+1 ;Save pointer to current line
+        LDAAX   2
+        STAAY   STACK+2
+        LDAAX   3
+        STAAY   STACK+3 ;Save length remaining
+        PLA
+        TAY
+        PLA
+        TAX
+        PLA
+        PLP
+        RTS
+
+ONST20  BRK
+        = WHOVER,"Host stack overflow",0
+
+
+; Check not overflowing mode 7 screen
+
+ ASSERT . <= &7C00
+
+        %       &7C00-.         ; Pad out for consistency
+
+        END     ; End of utilities part 2 file

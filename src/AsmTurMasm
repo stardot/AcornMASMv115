@@ -1,0 +1,26 @@
+*|> AsmTurMasm
+*Masm
+w 78
+l 118
+asm TurHdr
+
+*spool Stable
+symbol n
+*spool
+*|dir :2.X
+get x.masm02
+03
+n&8000
+get x.masm05
+24
+p
+get x.masm30
+31
+p
+save NewTurMasm
+&8000
+&C800
+&B000
+T
+
+*| The new 6502 Turbo Macro Assembler is NewTurMasm

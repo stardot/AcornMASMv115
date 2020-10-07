@@ -1,0 +1,575 @@
+ TTL Macro assembler - directive handling routines part 2 -> MASM22
+ OPT MASM22
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ======
+; DEQUAL
+; ======
+;
+; Handle the = directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DEQUAL ROUT
+ JSR EXPRESSION
+ BCC #10DEQUAL ;Branch if good
+ BVS #70DEQUAL ;Return if syntax error
+ LDA PASS
+ BNE #60DEQUAL ;Don't allow undefined symbols on pass 2
+10DEQUAL
+ LDX ESTPTR
+ LDAAX ESTACK-1
+ ASSERT MANSTR=0
+ BEQ #20DEQUAL ;Branch if string type
+ CMPIM MANARITH
+ BEQ #50DEQUAL ;Branch if arithmetic
+ JMP ARTE30 ;Moan bad type
+20DEQUAL
+ BCS #60DEQUAL ;Don't allow undefined symbols in string operands
+ LDAAX ESTACK-2
+30DEQUAL
+ BEQ #45DEQUALS ;Note Z set on A
+ STA SLEN ;Save string length
+ JSR UPPROGC ;Increment PC
+ LDXIM 1 ;Bottom of stack
+40DEQUAL
+ PHX
+ LDAAX ESTACK ;Get code byte
+ JSR CODEOUT
+ PLX
+ INX
+ DEC SLEN
+ BNE #40DEQUAL ;Branch if more to output
+45DEQUALS
+ LDAIY LINEPTR
+ INY
+ CMPIM "," ;Check syntax
+ BEQ DEQUAL ;Loop if more expressions
+ DEY ;Reset Y
+ JMP ECOMLINE ;Check termination
+50DEQUAL
+ LDAIM 1
+ BRA #30DEQUAL ;Treat as one character string
+60DEQUAL
+ JMP EUNDSYMB ;Moan undefined symbol
+70DEQUAL
+ RTS
+;
+; ====
+; DAMP
+; ====
+;
+; Handle the & directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DAMP
+ JSR ARTEXPR
+ BCS DAMP30 ;Branch if bad expression
+DAMP10
+ JSR ECOMLINE ;Check syntax
+ BCC DELS10 ;Branch if bad
+ LDAIM 2
+ JSR UPPROGC ;Increment program counter accordingly
+ JMP OUT110 ;Else output code
+DAMP30
+ BVS DELS10 ;Branch if syntax error
+ LDA PASS
+ BEQ DAMP10 ;Ignore undefined symbol error on pass 1
+ BRA #60DEQUAL ;Else moan
+;
+; ===
+; DIF
+; ===
+;
+; Handle the [ directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DIF
+ LDA IFDEPTH
+ ORA WDEPTH
+ BNE DIF15 ;Don't read if skipping
+ JSR LOGEXPR ;Get the following expression
+ BCS DIF05 ;Branch if bad
+ BIT TVVAL
+ BPL DIF10 ;Branch if about to skip
+DIF05
+ INC IFFLAG ;Else increment count of successful IFs
+ BRA DIF20
+DIF10
+ JSR OFFLIST
+DIF15
+ INC IFDEPTH ;Increment count of failed IFs
+DIF20
+ JMP ONCOND ;Stack conditional assembly token
+;
+; =====
+; DELSE
+; =====
+;
+; Handle the | directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DELSE
+ LDA IFDEPTH
+ ORA IFFLAG
+ BEQ DELS30 ;Branch if no opening [
+ JSR OFFCOND
+ JSR ONCOND ;Check the stacking!
+ LDX IFDEPTH
+ BNE DELS20 ;Branch if already skipping
+ INC IFDEPTH
+ DEC IFFLAG ;Else start skipping
+OFFLIST
+ LDA TERSE
+ BNE DELS10 ;Ignore if full listing required
+ CLR LISTREQ ;Request listing off after this
+ LDA LISTFLAG
+ STA OLIST ;Preserve previous status
+DELS10
+ RTS
+DELS20
+ DEX
+ BNE DELS10 ;No change if deep skip
+ CLR IFDEPTH
+ INC IFFLAG ;Else stop skipping
+UPDLIST
+ LDA WDEPTH
+ ORA IFDEPTH
+ ORA LISTFLAG
+ BNE DELS10 ;Branch if already listing or ignoring
+ LDA OLIST
+ STA LISTREQ
+ STA LISTFLAG
+ ORA PASS
+ BEQ DELS10 ;Branch if pass 1 or not listing anyway
+ JSR LNSTART
+SETCOL
+ LDAIM  8
+ STA COLUMN ;For padding
+ RTS
+DELS30
+ LDYIM BADCOND
+DELS40
+ JMP ERROR
+;
+; ===
+; DFI
+; ===
+;
+; Handle the ] directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DFI
+ LDA IFDEPTH
+ ORA IFFLAG
+ BEQ DELS30
+ LDA IFDEPTH
+ BEQ DFI10 ;Branch if not skipping
+ DEC IFDEPTH ;One less skipping level
+ BNE DFI20 ;Branch if still skipping
+ JSR UPDLIST ;Update listing status
+ BRA DFI20 ;Unstack token
+DFI10
+ DEC IFFLAG
+DFI20
+ JMP OFFCOND ;Unstack token
+;
+; ======
+; DWHILE
+; ======
+;
+; Handle the WHILE directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DWHILE
+ LDA WDEPTH
+ ORA IFDEPTH
+ BNE DWHI10 ;Branch if skipping
+ JSR LOGEXPR ;Get value
+ BCS DWHI10 ;Branch if bad
+ BIT TVVAL
+ BVC DWHI10 ;Branch if false
+ INC WFLAG ;Increment success count
+ BRA DWHI20
+DWHI10    
+ JSR OFFLIST ;Stop listing
+ INC WDEPTH ;Increment failed
+DWHI20
+ JMP ONWHILE ;Stack token
+;
+; =====
+; DWEND
+; =====
+;
+; Handle the WEND directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DWEND
+ LDA WDEPTH
+ ORA WFLAG
+ BEQ WEND20 ;Branch if missing WHILE
+ LDA WDEPTH
+ BNE WEND10 ;Branch if we're ignoring
+ DEC WFLAG
+ JSR ONLYLIST ;Don't do NEWLINE
+ JSR OFFWHILE ;Return to WHILE statement
+ JSR OWCHECK ;Check for overwrite
+ SEC
+ ROR NONEW ;No NEWLINE this time
+ RTS
+WEND10
+ DEC WDEPTH
+ BNE WEND15 ;Branch if still skipping
+ JSR UPDLIST
+WEND15
+ JMP KWHILE ;Remove WHILE token
+WEND20
+ LDYIM BADWEND
+WEND30
+ BRA DELS40 ;Moan
+;
+; =====
+; DSDRV
+; DODRV
+; =====
+;
+; Handle the < and > directives
+;
+; ENTRY:- X = directive number
+;
+; EXIT:-  No registers or flags preserved
+;
+DSDRV
+DODRV
+ [ FS = DFS ;Only need this for DFS
+ PHX
+ JSR AREEXPR
+ PLX ;Save directive number
+ BCS DSDR05 ;Branch if bad expression
+ LDA TVVAL+ 1
+ BNE DSDR20 ;Branch if out of range expression
+ LDA TVVAL
+ CMPIM  3+ 1
+ BCS DSDR20 ;Branch if out of range expression
+ STAAX SDRIVE-TSDRV ;Save new drive number
+ ]
+DSDR05
+ RTS
+ [ FS = DFS ;Only need this for DFS
+DSDR20
+ LDYIM BADDRV
+ BRA WEND30 ;Branch always to moan drive number out of range
+ ]
+;
+; =======
+; DASSERT
+; =======
+;
+; Handle the ASSERT directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DASSERT
+ LDX PASS
+ BEQ DSDR05 ;Ignore on pass 1
+ JSR LOGEXPR
+ BCS ASSE20 ;Branch if definitely bad
+ BIT TVVAL
+ BMI DSDR05 ;Branch if o.k.
+ASSE20
+ BRK
+ = BADASS,"Assert failed",&00
+;
+; ======
+; DMNOTE
+; ======
+;
+; Handle the MNOTE directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DMNOTE
+ JSR ARDEXPR
+ BCS DSDR05 ;Branch if bad
+ LDAIY LINEPTR
+ CMPIM ","
+ BNE DMNO30 ;Branch if syntax error
+ LDA TVVAL
+ ORA TVVAL+ 1
+ PHA ;Save expression state
+ INY ;Past comma
+ JSR STREXPR ;Get message
+ BCS DSDR05 ;Branch if bad
+ LDA SLEN
+ BEQ DMNO20 ;Branch if zero length string
+ LDXIM  1
+ PLA
+ PHA
+ ORA PASS ;Print message if pass 2 or non-zero code
+ BEQ DMNO20
+DMNO10
+ LDAAX ESTACK
+ JSR CHARPRINT
+ INX
+ DEC SLEN
+ BNE DMNO10 ;Loop till end of message
+ JSR NEWLPRINT
+DMNO20
+ PLA
+ BEQ DSDR05 ;Branch if not fatal
+ BRK
+ = BADMNOTE,"Stopped",&00
+DMNO30
+ JMP EBADSYN ;Moan
+;
+; ====
+; DCPU
+; ====
+;
+; Handle the CPU directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DCPU ROUT
+ JSR AREEXPR ;Get good expression with valid termination
+ BCS #20DCPU ;Branch if bad
+ LDA TVVAL
+ ORA TVVAL+1
+ BEQ #10DCPU ;Branch if ordinary CPU
+ LDAIM &80 ;Else CMOS version
+10DCPU
+ EOR CPU ;See if any change
+ BPL #20DCPU ;Branch if not
+ BIT NOCPU ;See if we've already assumed a CPU
+ BMI #30DCPU ;Branch if so
+ EOR CPU ;Restore value
+ STA CPU ;And update
+20DCPU
+ RTS
+30DCPU
+ LDYIM BADCPU
+ JMP ERROR
+;
+; =====
+; DSETA
+; =====
+;
+; Handle the SETA directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DSETA
+ JSR AREEXPR ;Get the expression
+ BCS SETC30 ;Branch if bad
+ LDAIM ARITHM
+DSET10
+ JSR SETCOM ;Common code
+ BCS SETC30 ;Branch if error
+ JMP DSTA43 ;Assign value to symbol
+;
+; =====
+; DSETL
+; =====
+;
+; Handle the SETL directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DSETL
+ JSR LOGEXPR ;Get the expression
+ BCS SETC30 ;Branch if bad
+ LDAIM LOGICAL
+ BRA DSET10 ;Common code
+;
+; ======
+; SETCOM
+; ======
+;
+; Common code for SETA, SETL, SETS to handle symbol tables
+;
+; ENTRY:- A = symbol type
+;
+; EXIT:-  No registers preserved
+;         C = 1 <=> error
+;
+SETCOM
+ ORA MDEPTH
+ STA TYPE ;Ready for LVLOOK
+ LDYIM 1
+ JSR GETVAR ;Get the variable symbol, note V = 0 now
+ JSR LVLOOK ;See if a local parameter (LVLOOK knows about macro depth)
+ BCC SETC10 ;Branch if not local
+ JSR LSYMB ;Look up in main table
+SETC20
+ LDAIY SYMPT
+ EOR TYPE ;Check type bits
+ ANDIM &60 ;Look only at type
+ CLC
+ BEQ SETC30 ;Branch if o.k.
+ JMP ARTE30 ;Moan type mismatch
+SETC10
+ LDA TYPE
+ EOR MDEPTH ;Remove macro depth
+ STA TYPE
+ SEC ;Don't insert
+ JSR VSYMB ;Try global symbol
+ BCS SETC20 ;Branch if there
+ SEC
+ LDYIM UNKVAR
+ JMP ERROR ;Moan
+SETC30
+ RTS
+;
+; =====
+; DSETS
+; =====
+;
+; Handle the SETS directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DSETS
+ JSR STREXPR ;Get relevant expression
+ BCS SETC30 ;Branch if bad
+ LDAIM STRING
+ JSR SETCOM ;Common code for symbol handling
+ BCS SETC30 ;Branch if bad
+ LDYIM DATAOFF
+ LDAIY SYMPT
+ STA HEAPLOC
+ INY
+ LDAIY SYMPT
+ STA HEAPLOC+1 ;Get pointer to heap control block
+ LDA SLEN
+ JSR EXTSTRING ;And extend the string
+;
+; Now copy in the string
+;
+ LDYIM 1
+ LDAIY HEAPLOC
+ PHA
+ DEY
+ LDAIY HEAPLOC
+ STA HEAPLOC
+ PLA
+ STA HEAPLOC+1 ;Point to where to write string
+ LDXIM 1 ;Start of string
+ LDA SLEN
+ BEQ SETC30 ;Branch if zero length string
+DSET20
+ LDAAX ESTACK
+ STAIY HEAPLOC
+ INY
+ INX
+ DEC SLEN
+ BNE DSET20 ;Branch if more to copy
+ RTS ;Else finish
+;
+; ====
+; DOPT
+; ====
+;
+; Handle the OPT directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DOPT ROUT
+ LDA PASS
+ BEQ #80DOPT ;Ignore on pass 1
+ JSR AREEXPR ;Get value
+ BCS #80DOPT ;Branch if error
+ LDA TVVAL+1
+ BNE #50DOPT ;Branch if out of range
+ LDA TVVAL
+ CMPIM MAXOPT
+ BCS #50DOPT ;Branch if out of range
+ BIT PRINT
+ BPL #60DOPT ;Branch if not allowed to print
+ BIT LISTFLAG
+ BPL #70DOPT ;Branch if not currently printing
+ ANDIM OPTOFF+OPTNEW+OPTLN ;Not interested in OPTON
+10DOPT
+ LSRA ;See if OPTON
+ BCC #20DOPT ;Branch if not
+ LSRA ;See if OPTOFF as well
+ BCS #30DOPT ;Silly if so
+ PHA
+ LDA PRINT
+ STA OLIST ;Ready for UPDLIST
+ JSR UPDLIST ;Update listing status
+ PLA
+ BRA #30DOPT
+20DOPT
+ LSRA ;See if OPTOFF
+ BCC #30DOPT ;Branch if not
+ CLR LISTREQ ;Request listing off after this line
+ CLR OLIST ;And set old state
+30DOPT
+ LSRA ;See if new page
+ BCC #40DOPT ;Branch if not
+ LDXIM &F0 ;Off end of page
+ STX LENGTH
+40DOPT
+ LSRA ;See if reset line numbers
+ BCC #80DOPT ;Branch if not
+SETLNUM
+ CLR LNNUM
+ CLR LNNUM+1
+80DOPT
+ RTS
+50DOPT
+ LDYIM OPTBAD
+ JMP ERROR ;Moan
+60DOPT
+ ANDIM OPTLN ;Only interested in new line number
+70DOPT
+ ANDIM OPTON+OPTLN+OPTNEW ;Interested in new line number, page and print on
+ TAX
+ LSRA ;See if OPTON
+ TXA
+ BCS #10DOPT ;Branch if so
+ ANDIM OPTLN ;Only interested in new line number
+ BRA #10DOPT ;Else get rid of all but line number reset
+;
+; End of directive handling routines file
+;
+ LNK $TUBECODE

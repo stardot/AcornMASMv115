@@ -1,0 +1,1074 @@
+ TTL Macro assembler - arithmetic subroutines -> MASM21
+ OPT MASM21
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ====
+; DSTR
+; ====
+;
+; Handle the STR operator
+;
+; ENTRY:- X points to current top of stack
+;
+; EXIT:-  ESTPTR points to new top of stack
+;         A, Y, P corrupt
+;         Result on stack
+;
+DSTR
+ LDA OPRND2
+ BRA DCHR20 ;Common code
+;
+; ====
+; DCHR
+; ====
+;
+; Handle the CHR operator
+;
+; ENTRY:- X points to current top of stack
+;
+; EXIT:-  ESTPTR points to new top of stack
+;         A, Y, P corrupt
+;         Result on stack
+;
+DCHR
+ LDA OP2TYPE
+ CMPIM MANLOG
+ BEQ DCHR10 ;Logical handled separately
+ LDA OPRND2+1
+ JSR HEXCON
+ LDA OPRND2
+ JSR HEXCON
+ LDAIM 4
+ BRA DLEF22
+DCHR10
+ LDAIM "T"
+ BIT OPRND2+1
+ BMI DCHR20 ;Branch if true
+ LDAIM "F" ;Else false
+DCHR20
+ STAAX ESTACK
+ INX
+ LDAIM 1
+ BRA DLEF22
+;
+; ======
+; DRIGHT
+; ======
+;
+; Handle the RIGHT operator
+;
+; ENTRY:- X points to current top of stack
+;
+; EXIT:-  ESTPTR points to new top of stack
+;         A, Y, P corrupt
+;         Result on stack
+;
+DRIGHT
+ LDA OPRND2+1
+ BNE DLEF40 ;Branch if too long request
+ LDA OP1LEN
+ CMP OPRND2
+ BCC DLEF40 ;Branch if too long request
+ LDA OPRND2
+ BEQ DLEF20 ;Branch if zero length result
+ LDA OP1LEN
+ SBC OPRND2 ;Get start pointer
+ TAY
+DRIG10
+ LDAIY OPRND1
+ STAAX ESTACK
+ INY
+ INX
+ CPY OP1LEN
+ BNE DRIG10 ;Loop till all copied
+ BRA DLEF20
+;
+; =====
+; DLEFT
+; =====
+;
+; Handle the LEFT operator
+;
+; ENTRY:- X points to current top of stack
+;
+; EXIT:-  ESTPTR points to new top of stack
+;         A, Y, P corrupt
+;         Result on stack
+;
+DLEFT
+ LDA OPRND2+1
+ BNE DLEF40 ;Branch if too long
+ LDA OP1LEN
+ CMP OPRND2
+ BCC DLEF40 ;Branch if too long
+ LDYIM 0
+ LDA OPRND2
+ BEQ DLEF20 ;Branch if null string requested
+DLEF10
+ LDAIY OPRND1
+ STAAX ESTACK ;Add to stack
+ INY
+ INX
+ CPY OPRND2
+ BNE DLEF10 ;Branch if more to copy
+DLEF20
+ LDA OPRND2
+DLEF22
+ STAAX ESTACK
+ INX
+ ASSERT MANSTR = 0
+ CLRAX ESTACK
+ INX
+ CPX ESTPTR
+ BCS DLEF60 ;Branch if not stack overflow
+ JMP EXPSTOVER
+DLEF40
+ BIT DEFINED
+ BMI DLEF50 ;Branch if expression undefined anyway
+DLEF45
+ LDYIM BADSTR
+ JSR ERROR ;Moan
+DLEF50
+ CLRAX ESTACK
+ INX
+ CLRAX ESTACK
+ [ MANSTR /= 0
+ ! 0,"MANSTR not zero"
+ ]
+ INX
+DLEF60
+ STX ESTPTR
+ RTS
+;
+; ===
+; DCC
+; ===
+;
+; Handle the DCC operator
+;
+; ENTRY:- X points to TOS
+;
+; EXIT:-  A, Y, P corrupt
+;         X points to new TOS
+;         ESTPTR points to new TOS
+;
+DCC
+ LDA OP1LEN
+ CLC
+ ADC OP2LEN
+ BMI DLEF45 ;Branch if string too long
+ STA RESLT ;Save length
+;
+; Now use unused heap to construct answer
+;
+ LDY HEAPPTR+1
+ INY
+ CPYIM /CODE ;See if in last page
+ BCC DCC10 ;Branch if not
+ CLC
+ LDA HEAPPTR
+ ADC RESLT
+ BCC DCC10 ;Branch if room for string
+ JMP HEAP40 ;Moan, heap overflow
+DCC10
+ LDY OP1LEN
+ BEQ DCC30 ;Branch if string 1 of length zero
+ DEY
+DCC20
+ LDAIY OPRND1
+ STAIY HEAPPTR
+ DEY
+ BPL DCC20 ;Loop till copied string 1
+DCC30
+ LDY OP2LEN
+ BEQ DCC50 ;Branch if string 2 of length zero
+ LDA HEAPPTR
+ CLC
+ ADC OP1LEN
+ STA SYMPT
+ LDA HEAPPTR+1
+ ADCIM 0
+ STA SYMPT+1 ;Where to put second half
+ [ $TURBO
+ LDAIM 0
+ STA XSYMPT
+ ]
+ DEY
+DCC40
+ LDAIY OPRND2
+ STAIY SYMPT
+ DEY
+ BPL DCC40 ;Loop till all copied in
+DCC50
+;
+; Now transfer answer onto stack
+;
+ LDYIM 0
+DCC60
+ CPY RESLT
+ TYA
+ BCS DLEF22 ;Branch if finished
+ LDAIY HEAPPTR
+ STAAX ESTACK
+ INY
+ INX
+ BRA DCC60
+;
+; ======
+; RELATE
+; ======
+;
+; Handle relational operators
+;
+; ENTRY:- Y = operator number
+;
+; EXIT:-  X preserved
+;         A, Y, P corrupt
+;         Answer in RESLT
+;
+RELATE
+ INY
+ INY ;Operator in Y, 9 <= Y <= F
+ LDA OP1TYPE
+ ORA OP2TYPE
+ [ MANSTR=0
+ |
+ ! 0,"MANSTR not zero"
+ ]
+ BNE CMPTOKEN ;Branch for arithmetic case
+ TYA
+ PHA ;Save operator
+ RORA ;See if < required
+ BCC RELA70 ;Branch if not
+ RORA ;See if = required
+ BCS RELA50 ;Branch if so
+ RORA
+ BCS RELA40 ;Branch if <>
+RELA15
+;
+; Here we require A < B
+;
+ JSR SLESS
+RELA20
+ LDYIM &FF
+ BCC RELA30 ;Branch if condition true
+ INY
+RELA30
+ PLA
+ BRA CMPT30
+RELA40
+;
+; Here we require A <> B
+;
+ JSR SEQ ;See if equal
+ ROLA
+ EORIM 1
+ LSRA ;Set carry back
+ BRA RELA20
+RELA50
+;
+; Here we require A <= B
+;
+ JSR SLESS
+ BCC RELA20 ;Branch if <
+RELA60
+ JSR SEQ
+ BRA RELA20
+RELA70
+;
+; Here we have >, >=, =
+;
+ PHA
+ LDXIM 1
+RELA80
+ LDAAX OPRND1
+ PHA
+ LDAAX OPRND2
+ STAAX OPRND1
+ PLA
+ STAAX OPRND2 ;Swop operands
+ DEX
+ BPL RELA80
+ LDA OP1LEN
+ PHA
+ LDA OP2LEN
+ STA OP1LEN
+ PLA
+ STA OP2LEN
+ PLA
+ RORA
+ BCC RELA15 ;Branch if >
+ RORA
+ BCC RELA60 ;Branch if =
+ BRA RELA50 ;Else >=
+;
+; =====
+; SLESS
+; =====
+;
+; See if string 1 < string 2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 0 <=> result true
+;         X preserved
+;         A, Y, P corrupt
+;
+SLESS
+ LDA OP1LEN
+ BEQ SLES20 ;Branch if string 1 of length zero
+ CMP OP2LEN
+ BCS SLES30 ;Branch if string 1 too long
+SLES05
+ LDY OP1LEN
+ DEY
+SLES10
+ SEC ;Assume will fail
+ LDAIY OPRND1
+ EORIY OPRND2
+ BNE SLES30
+ DEY
+ BPL SLES10 ;Loop till finished compare
+SLES20
+ CLC ;Return ok
+SLES30
+ RTS
+;
+; ===
+; SEQ
+; ===
+;
+; See if string 1 = string 2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 0 <=> result true
+;         X preserved
+;         A, Y, P corrupt
+;
+SEQ
+ LDA OP1LEN
+ EOR OP2LEN
+ BEQ SEQ10 ;Branch if lengths ok
+ SEC
+ RTS
+SEQ10
+ LDA OP1LEN
+ BEQ SLES20 ;Branch if zero length strings
+ BRA SLES05 ;Compare
+;
+; ========
+; CMPTOKEN
+; ========
+;
+; Compare OPRND1 with OPRND2, using condition given by a token
+; (assumed in range 9 - F), and set RESLT
+; according to the truth of the condition
+;
+; ENTRY:- Y = token
+;
+; EXIT:-  X preserved
+;         No other registers or flags preserved
+;
+CMPTOKEN
+ PHY ;Preserve token
+ JSR SUBTR
+ BEQ CMPT40 ;Branch if OPRND1 = OPRND2
+ PLA
+ BCC CMPT20 ;Branch if OPRND1 < OPRND2
+ RORA ;Get correct bit of token in C
+CMPT10
+ RORA
+CMPT20
+ RORA
+;
+; Now C = 1 <=> condition satisfied
+;
+ LDYIM 0
+ BCC CMPT30
+ DEY
+CMPT30
+ STY RESLT
+ STY RESLT+1
+ RTS
+CMPT40
+ PLA
+ BRA CMPT10
+;
+; ====
+; UADD
+; ====
+;
+; RESLT := OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+UADD
+ CLR OPRND1
+ CLR OPRND1+1
+;
+; Fall through to ADD
+;
+; ===
+; ADD
+; ===
+;
+; RESLT := OPRND1 + OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A corrupt
+;
+ADD
+ CLC
+ LDA OPRND1
+ ADC OPRND2
+ STA RESLT
+ LDA OPRND1+1
+ ADC OPRND2+1
+ STA RESLT+1
+ RTS
+;
+; ======
+; NEGATE
+; ======
+;
+; RESLT := - OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Z set as appropriate
+;         C = 1 <=> 0 negated
+;         V = 1 <=> maximum negative integer encountered
+;         X, Y preserved
+;         A corrupt
+;
+NEGATE
+ CLR OPRND1
+ CLR OPRND1+1
+;
+; Fall through to SUBTR
+;
+;
+; =====
+; SUBTR
+; =====
+;
+; RESLT := OPRND1 - OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Carry clear <=> 16 bit underflow
+;         V set <=> 15 bit overflow
+;         Z set <=> result zero
+;         X, Y preserved
+;         A corrupt
+;
+SUBTR
+ SEC
+ LDA OPRND1
+ SBC OPRND2
+ STA RESLT
+ LDA OPRND1+1
+ SBC OPRND2+1
+ STA RESLT+1
+ ORA RESLT ;For CPARE
+ RTS
+;
+; ===
+; AND
+; ===
+;
+; RESLT := OPRND1 AND OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A corrupt
+;
+AND
+ LDA OPRND1
+ AND OPRND2
+ STA RESLT
+ LDA OPRND1+1
+ AND OPRND2+1
+ STA RESLT+1
+ RTS
+;
+; ==
+; OR
+; ==
+;
+; RESLT := OPRND1 OR OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A corrupt
+;
+OR
+ LDA OPRND1
+ ORA OPRND2
+ STA RESLT
+ LDA OPRND1+1
+ ORA OPRND2+1
+ STA RESLT+1
+ RTS
+;
+; ===
+; NOT
+; ===
+;
+; RESLT := NOT OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Z set <=> result zero
+;         X, Y preserved
+;         A corrupt
+;
+NOT
+ LDAIM &FF
+ STA OPRND1
+ STA OPRND1+1
+;
+; Fall through to EOR
+;
+;
+; ===
+; EOR
+; ===
+;
+; RESLT := OPRND1 EOR OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A corrupt
+;
+EOR
+ LDA OPRND1
+ EOR OPRND2
+ STA RESLT
+ LDA OPRND1+1
+ EOR OPRND2+1
+ STA RESLT+1
+ RTS
+;
+; ====
+; MULT
+; ====
+;
+; RESLT := OPRND1 * OPRND2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Answer in RESLT
+;         C clear
+;         A, X, Y corrupt
+;
+MULT
+ LDXIM 1 ;Start with MSB
+MULT20
+ LDYIM 8 ;8 bits per byte
+MULT30
+;
+; Now shift result
+;
+ CLC
+ ROL RESLT
+ ROL RESLT+1
+ ASLAX OPRND1 ;See if add required
+ BCC MULT50 ;Branch if not
+ CLC ;Prepare for add
+ LDA RESLT
+ ADC OPRND2
+ STA RESLT ;One byte
+ LDA RESLT+1
+ ADC OPRND2+1
+ STA RESLT+1
+MULT50
+ DEY
+ BNE MULT30 ;Loop if more this byte
+ DEX
+ BPL MULT20 ;Loop if not finished
+ RTS
+;
+; ====
+; DDIV
+; ====
+;
+; Do division
+;
+; ENTRY:- Operands in OPRND1 and OPRND2
+;
+; EXIT:-  A, X, Y, P corrupt
+;         Answer in RESLT
+;
+DDIV
+ JSR DMOD ;Same routine for both
+ LDA OPRND1
+ STA RESLT
+ LDA OPRND1+1
+ STA RESLT+1 ;Transfer answer out
+DDIV10
+ RTS
+;
+; ====
+; DMOD
+; ====
+;
+; Do modulo
+;
+; ENTRY:- Operands in OPRND1 and OPRND2
+;
+; EXIT:-  A, X, Y, P corrupt
+;         Answer in RESLT
+;
+DMOD
+ JSR DIVIDE
+ BCC DDIV10 ;Branch if not division failure
+ BIT DEFINED
+ BMI DDIV10 ;Branch if got errors anyway
+ LDYIM DIVZERO
+ JMP ERROR ;Moan division by zero
+;
+; ======
+; DIVIDE
+; ======
+;
+; OPRND1 := OPRND1 DIV OPRND2
+; RESLT  := OPRND1 MOD OPRND2
+; 0 <= RESLT < OPRND2
+;
+; ENTRY :- No conditions
+;
+; EXIT:-  Carry set <=> divide by zero attempted
+;         No other flags meaningful
+;         A, X, Y corrupt
+;
+DIVIDE
+ LDA OPRND2
+ ORA OPRND2+1
+ SEC
+ BEQ DIV120 ;Return on divide by zero
+;
+; Now do unsigned division
+;
+ CLR RESLT
+ CLR RESLT+1
+ LDXIM 16
+DIVI60
+ ROL OPRND1
+ ROL OPRND1+1 ;Shift answer left one
+ ROL RESLT
+ ROL RESLT+1 ;And top bit into dividend
+ SEC
+ LDA RESLT
+ SBC OPRND2 ;Check if divisor <= dividend
+ TAY
+ LDA RESLT+1
+ SBC OPRND2+1
+ BCC DIV100 ;Branch if not
+ STA RESLT+1
+ STY RESLT ;Store new dividend
+DIV100
+ DEX ;Decrement preserving C
+ BNE DIVI60 ;Loop for more subtractions
+ ROL OPRND1
+ ROL OPRND1+1 ;Shift in last bit of answer
+ CLC ;Exit good
+DIV120
+ RTS
+;
+; =======
+; DUSLASH
+; =======
+;
+; Handle byte swop
+;
+; ENTRY:- Operand in OPRND2
+;
+; EXIT:-  Result in RESLT
+;         X, Y preserved
+;         A, P corrupt
+;
+DUSLASH
+ LDA OPRND2
+ STA RESLT+1
+ LDA OPRND2+1
+ STA RESLT
+ RTS
+;
+; ====
+; DLEN
+; ====
+;
+; Handle length of string
+;
+; ENTRY:- Operand in OPRND2
+;
+; EXIT:-  Result in RESLT
+;         X, Y preserved
+;         A, P corrupt
+;
+DLEN
+ LDA OP2LEN
+DLEN10
+ STA RESLT
+ CLR RESLT+1
+ RTS
+;
+; ====
+; DMSB
+; ====
+;
+; Handle take most significant byte
+;
+; ENTRY:- Operand in OPRND2
+;
+; EXIT:-  Result in RESLT
+;         X, Y preserved
+;         A, P corrupt
+;
+DMSB
+ LDA OPRND2+1
+ BRA DLEN10 ;Jump to common code
+;
+; ====
+; DLSB
+; ====
+;
+; Handle take least significant byte
+;
+; ENTRY:- Operand in OPRND2
+;
+; EXIT:-  Result in RESLT
+;         X, Y preserved
+;         A, P corrupt
+;
+DLSB
+ LDA OPRND2
+ BRA DLEN10 ;Jump to common code
+;
+; =======
+; DSHRIEK
+; =======
+;
+; Handle set top bit of bottom byte
+;
+; ENTRY:- Operand in OPRND2
+;
+; EXIT:-  Result in RESLT
+;         X, Y preserved
+;         A, P corrupt
+;
+DSHRIEK
+ JSR UADD ;RESLT := OPRND1
+ LDAIM &80
+ TSB RESLT
+ RTS
+;
+; =====
+; DROL2
+; =====
+;
+; Two byte rotate left
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DROL2
+ JSR RO2SUB
+ LDA RESLT
+ROL210
+ DEY
+ BMI SHR120
+ ASLA
+ ROL RESLT+1
+ BCC ROL210
+ ORAIM 1
+ BRA ROL210
+;
+; =====
+; DROR2
+; =====
+;
+; Two byte rotate right
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DROR2
+ JSR RO2SUB
+ LDA RESLT+1
+ROR210
+ DEY
+ BMI SH2S05
+ LSRA
+ ROR RESLT
+ BCC ROR210
+ ORAIM &80
+ BRA ROR210
+;
+; =====
+; DROR1
+; =====
+;
+; One byte rotate right
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DROR1
+ JSR RO1SUB
+ROR110
+ DEY
+ BMI SHR120
+ LSRA
+ BCC ROR110
+ ORAIM &80
+ BRA ROR110
+;
+; =====
+; DROL1
+; =====
+;
+; One byte rotate left
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DROL1
+ JSR RO1SUB
+ROL110
+ DEY
+ BMI SHR120
+ ASLA
+ BCC ROL110
+ ORAIM 1
+ BRA ROL110
+;
+; =====
+; DSHR1
+; =====
+;
+; One byte shift right
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DSHR1
+ JSR SH1SUB
+ BCS SHR130
+ LDA OPRND1
+SHR110
+ DEY
+ BMI SHR120
+ LSRA
+ BRA SHR110
+SHR120
+ STA RESLT
+SHR130
+ RTS
+;
+; =====
+; DSHL1
+; =====
+;
+; One byte shift left
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DSHL1
+ JSR SH1SUB
+ BCS SHR130
+ LDA OPRND1
+SHL110
+ DEY
+ BMI SHR120
+ ASLA
+ BRA SHL110
+;
+; =====
+; DSHR2
+; =====
+;
+; Two byte shift right
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DSHR2
+ JSR SH2SUB
+ BCS SHR130 ;Branch if zero result
+SHR210
+ DEY
+ BMI SHR130
+ LSR RESLT+1
+ ROR RESLT
+ BRA SHR210
+;
+; =====
+; DSHL2
+; =====
+;
+; Two byte shift left
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Result in RESLT
+;
+DSHL2
+ JSR SH2SUB
+ BCS SHR130 ;Branch if zero result
+SHL210
+ DEY
+ BMI SHR130
+ ASL RESLT
+ ROL RESLT+1
+ BRA SHL210
+;
+; ======
+; SH2SUB
+; ======
+;
+; Set up for 2 byte shifts
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 1 <=> shift will produce zero
+;         If C = 1 then RESLT zero
+;         If C = 0 then RESLT = OPRND1
+;
+SH2SUB
+ CLR RESLT
+ CLR RESLT+1
+ SEC
+ LDY OPRND2+1
+ BNE SH2S10
+ LDY OPRND2
+ CPYIM 16
+ BCS SH2S10
+ LDA OPRND1
+ STA RESLT
+ LDA OPRND1+1
+SH2S05
+ STA RESLT+1
+SH2S10
+ RTS
+;
+; ======
+; SH1SUB
+; ======
+;
+; Set up for 1 byte shifts and rotates
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Top byte of OPRND1 in RESLT
+;         C = 1 <=> shift will produce zero
+;         Low byte of RESLT zero
+;
+SH1SUB
+ CLR RESLT
+ LDA OPRND1+1
+ STA RESLT+1
+ SEC
+ LDY OPRND2+1
+ BNE SH1S10
+ LDY OPRND2
+ CPYIM 8
+SH1S10
+ RTS
+;
+; ======
+; RO1SUB
+; ======
+;
+; Set up for one byte rotate
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  High byte RESLT = high byte OPRND1
+;         A = low byte OPRND1
+;         Y = OPRND2 AND 7
+;
+RO1SUB
+ LDA OPRND1+1
+ STA RESLT+1
+ LDA OPRND2
+ ANDIM &7
+ TAY
+ LDA OPRND1
+ RTS
+;
+; ======
+; RO2SUB
+; ======
+;
+; Set up for two byte rotate
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  RESLT = OPRND1
+;         Y = OPRND2 AND 15
+;
+RO2SUB
+ LDA OPRND1+1
+ STA RESLT+1
+ LDA OPRND1
+ STA RESLT
+ LDA OPRND2
+ ANDIM &F
+ TAY
+ RTS
+;
+; ======
+; HEXCON
+; ======
+;
+; Convert a byte to hex and put it on the expression stack
+;
+; ENTRY:- X points to TOS
+;
+; EXIT:-  X points to new TOS
+;         Y preserved
+;         A, P corrupt
+;
+HEXCON
+ PHA
+ LSRA
+ LSRA
+ LSRA
+ LSRA
+ JSR HEXDIG
+ STAAX ESTACK
+ INX
+ PLA
+ ANDIM &F
+ JSR HEXDIG
+ STAAX ESTACK
+ INX
+ RTS
+;
+; End of arithmetic subroutines file
+;
+ LNK MASM22

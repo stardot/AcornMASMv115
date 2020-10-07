@@ -1,0 +1,399 @@
+ TTL Macro assembler - symbol table and cross reference routines - > MASM10
+ OPT MASM10
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; Layout of the global symbol table
+; The table is a fixed format hashed table, with ten bytes per entry
+; Each entry consists of one byte qualifier, which is zero for unused,
+; top bit set for deleted, and otherwise equal to the qualifier of the symbol,
+; six bytes of the symbol name, a one byte status byte
+; describing the type of the symbol, and a two byte value.
+;
+; =====
+; ZSYMB
+; =====
+;
+; Clear out the global symbol table at the start of an assembly
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+ZSYMB ROUT
+ [ $TURBO
+ LDAIM /SYMSHI
+ STA XSYMPT
+ ]
+ LDAIM SYMSHI
+ STA SYMPT+1
+ CLR SYMPT
+ LDAIM 0
+10ZSYMB
+ STAI SYMPT
+ INC SYMPT
+ BNE #10ZSYMB ;Loop if not over page boundary
+ INC SYMPT+1 ;Next page
+ LDX SYMPT+1
+ CPXIM SYMEHI ;See if off end
+ BCC #10ZSYMB ;Branch if not
+;
+; Now initialize heap
+;
+ LDAIM /HEAP
+ STA HEAPPTR+1
+ CLR HEAPPTR ;Zero low byte
+ ASSERT :LSB:HEAP=0
+ RTS
+;
+; ======
+; LNXREF
+; ======
+;
+; Output the line number to the XREF file
+;
+; ENTRY:- Y = handle
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+LNXREF
+ LDA LNNUM
+ JSR OSBPUT
+ LDA LNNUM+1
+ JMP OSBPUT
+;
+; ======
+; UGSYMB
+; ======
+;
+; Handle usage of a global symbol
+;
+; ENTRY:- Symbol in QUAL/SYMBOL
+;         INDFLAG < 0 => Unknown operand size
+;
+; EXIT:-  C = 1 <=> symbol already there
+;         Y Points to status byte if symbol now there
+;         No other registers or flags preserved
+;
+UGSYMB
+ LDAIM 0
+ JSR DGSY10 ;Common code with definition
+ LDAIY SYMPT ;Get status byte
+ ORAIM 1 ;Now in use
+ BNE GSYM10 ;Branch always
+;
+; ======
+; DGSYMB
+; ======
+;
+; Handle definition of a global symbol
+;
+; ENTRY:- Symbol in QUAL/SYMBOL
+;         INDFLAG < 0 => Unknown operand size
+;
+; EXIT:-  C = 1 <=> symbol already there
+;         Y Points to status byte
+;         No other registers or flags preserved
+;
+DGSYMB ROUT
+ LDAIM 1 ;Symbol definition
+DGSY10
+ LDY HANDLE
+ BEQ GSYMB ;Branch if no xref
+ JSR OSBPUT ;Write out type byte
+ LDXIM -6 ;Six characters to be written
+20DGSYMB
+ LDAAX SYMBOL+6
+ JSR OSBPUT
+ INX
+ BNE #20DGSYMB ;Loop till symbol written out
+ JSR LNXREF ;Output the line number
+;
+; Fall through to GSYMB
+;
+; =====
+; GSYMB
+; =====
+;
+; Insert/look up a constant symbol in the global symbol table
+;
+; ENTRY:- Symbol in QUAL/SYMBOL
+;         INDFLAG < 0 => Unknown operand size
+;
+; EXIT:-  C = 1 <=> symbol already there
+;         Y Points to status byte
+;         No other registers or flags preserved
+;
+GSYMB ROUT
+ JSR HASH ;Find where it should go
+ JSR LOOKUP ;See if it is there
+ BCS #30GSYMB ;Branch if so
+ JSR ENTER ;Else insert it
+ LDYIM STATOFF ;Pointing to the symbol status
+ LDAIM XBYTE+NODEF ;Assume unknown number of bytes at present
+ BIT INDFLAG
+ BPL GSYM10 ;Branch if not forced
+ LDAIM FORCE+NODEF ;Indicate indeterminate opcodes will be forced absolute
+GSYM10
+ STAIY SYMPT ;Set status byte
+20GSYMB
+ RTS
+30GSYMB
+;
+; Now decide whether to force undefined symbols
+;
+ LDYIM STATOFF
+ BIT INDFLAG
+ BPL #20GSYMB ;No problem if not forcing anyway
+ LDAIY SYMPT
+ TAX
+ ANDIM &60 ;Look at definition status
+ BEQ #20GSYMB ;Branch if fully defined
+ ASSERT DEF=0
+ TXA
+ ORAIM FORCE ;Add force bit
+ BRA GSYM10 ;Branch always
+;
+; =====
+; VSYMB
+; =====
+;
+; Insert/look up a global variable symbol in the global symbol table
+;
+; ENTRY:- Symbol in QUAL/SYMBOL
+;         C = 0 <=> symbol to be inserted
+;
+; EXIT:-  C = 1 <=> symbol already there
+;         Y Points to status byte if symbol now there
+;         No other registers or flags preserved
+;
+VSYMB ROUT
+ PHP ;Save input status
+ JSR HASH ;Find where it should go
+10VSYMB
+ JSR LOOKUP ;See if it is there
+ LDAIM GLOBAL
+ BCC VSYM20 ;Branch if not already there
+ LDYIM STATOFF
+ LDAIY SYMPT ;Look at status
+ ASSERT GLOBAL=&80
+ BMI VSYM40 ;Branch if global as required
+ JSR WRAP ;On to next symbol
+ BRA #10VSYMB ;Branch always
+VSYM20
+;
+; Code common with LSYMB
+;
+ PLP
+ PHP ;Retrieving input status
+ BCS #30VSYMB ;Branch if insert not required
+ PHA ;Save local/global
+ JSR ENTER ;Put symbol in
+ PLA ;Get local/global back
+ ORA TYPE ;Set the type of variable
+ LDYIM STATOFF
+ STAIY SYMPT ;Mark as global variable
+30VSYMB
+ CLC ;Symbol wasn't there
+VSYM40
+ PLA ;Throw away input status
+ RTS
+;
+; =====
+; LSYMB
+; =====
+;
+; Insert/look up a local variable symbol in the global symbol table
+;
+; ENTRY:- Symbol in QUAL/SYMBOL
+;         C = 0 <=> symbol to be inserted
+;
+; EXIT:-  C = 1 <=> symbol already there
+;         Y Points to status byte if symbol now there
+;         No other registers or flags preserved
+;
+LSYMB ROUT
+ PHP ;Save input status
+ JSR HASH ;Find where it should go
+10LSYMB
+ JSR LOOKUP ;See if it is there
+ LDA MDEPTH ;Ready for possible insert
+ ASSERT LOCAL=0
+ BCC VSYM20 ;Branch if not already there
+ LDYIM STATOFF
+ LDAIY SYMPT ;Look at status
+ ASSERT GLOBAL=&80
+ BMI #20LSYMB ;Branch if not local
+ EOR TYPE ;Check macro depth correct
+ ANDIM &FF-&60 ;Remove type bits
+ BEQ VSYM40
+20LSYMB
+ JSR WRAP ;On to next symbol
+ BRA #10LSYMB ;Branch always
+;
+; ====
+; HASH
+; ====
+;
+; Generate the hash function for the global symbol table access
+; This is a similar hash function to that used in uASM
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;         SYMPT points to correct slot for symbol
+;         C = 0
+;
+HASH ROUT
+ LDA SYMBOL
+ [ $TURBO
+ LSRA
+ RORA
+ RORA
+ |
+ ASLA
+ ROLA
+ ]
+ ADC SYMBOL+2
+ ADC SYMBOL+4
+ SEC ;Ready to reduce mod number of entries * 8
+10HASH
+ SBCIM SYMRED ;Reducing
+ BCS #10HASH ;Branch if subtraction o.k.
+ ADCIM SYMRED ;Restore overshoot
+ PHA ;Save high byte
+ STA SYMPT+1
+;
+; C = 1 here
+;
+ LDA SYMBOL+1
+ ROLA
+ ADC SYMBOL+3
+ ROLA
+ ADC SYMBOL+5
+ ANDIM &F8 ;Ensure a multiple of 8
+ STA SYMPT
+;
+; Now multiply by 5/4
+;
+ LSR SYMPT+1
+ ROR SYMPT
+ LSR SYMPT+1
+ ROR SYMPT ;Divided by 4, C = 0 by above ANDIM
+ ADC SYMPT
+ STA SYMPT ;Low pointer
+ PLA
+ ADC SYMPT+1
+ ADCIM SYMSHI ;Point into the table
+ STA SYMPT+1
+ [ $TURBO
+ LDAIM /SYMSHI
+ STA XSYMPT
+ ]
+ LDAIM &FF
+ STA WRAPFLAG ;Indicate no wraparound for this symbol
+ RTS
+;
+; ======
+; LOOKUP
+; ======
+;
+; Lowest level lookup routine, looking for symbol in SYMBOL,
+; with qualifier in QUAL, starting at SYMPT,
+; and wrapping round, with a fatal error if wraparound occurs twice.
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 0 <=> symbol not found
+;         No return <=> symbol table full
+;         Otherwise SYMPT points to symbol status
+;         X preserved
+;         No other registers or flags preserved
+;
+LOOKUP ROUT
+ LDYIM 6
+10LOOKUP
+ LDAIY SYMPT
+ CMPAY QUAL ;Check if symbols the same
+ ASSERT SYMBOL=QUAL+1
+ BNE #20LOOKUP ;Branch if not
+ DEY
+ BPL #10LOOKUP ;Branch if more to look at
+;
+; Symbols the same
+;
+30LOOKUP
+ RTS
+20LOOKUP
+ CLC
+ TAY
+ BEQ #30LOOKUP ;Branch if not found it
+;
+; Symbols differ
+;
+ JSR WRAP
+ BRA LOOKUP ;Look at next symbol
+;
+; =====
+; ENTER
+; =====
+;
+; Copies the current symbol and qualifier into the slot referenced by SYMPT
+; Assumes table not full
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X preserved
+;         No other registers or flags preserved
+;
+ENTER ROUT
+ LDYIM 6
+10ENTER
+ LDAAY QUAL
+ STAIY SYMPT ;Insert the symbol
+ ASSERT SYMBOL=QUAL+1
+ DEY
+ BPL #10ENTER ;Loop till end
+WRAPRTS
+ RTS
+;
+; ====
+; WRAP
+; ====
+;
+; Increment the symbol table pointer, coping with wraparound and table full
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 0
+;         X, Y preserved
+;         A, P corrupt
+;
+WRAP ROUT
+ CLC
+ LDA SYMPT
+ ADCIM ENTOFF ;On to next symbol
+ STA SYMPT
+ BCC WRAPRTS ;Branch if no wraparound
+ INC SYMPT+1
+ LDA SYMPT+1
+ CMPIM SYMEHI ;See if about to wrap around
+ BCC WRAPRTS ;Exit if not
+ LDAIM SYMSHI
+ STA SYMPT+1 ;Wrap around
+ INC WRAPFLAG
+ CLC
+ BEQ WRAPRTS ;Branch if first wrap around
+ JSR MESSAGE
+ = "Symbo",!"l"
+ JMP TABOVER
+;
+; End of symbol table routines file
+;
+ LNK MASM11

@@ -1,0 +1,292 @@
+ TTL Macro assembler - variable handling routines -> MASM16
+ OPT MASM16
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+;
+; =======
+; VARLINE
+; =======
+;
+; Get a line with variable character symbols substituted in
+;
+; ENTRY:- LINEPTR points to line
+;         Y points after text to be copied across
+;
+; EXIT:-  LINEPTR points to line
+;         Line in EXBF2
+;         No registers or flags preserved
+;
+VAR200
+ [ :LSB:EXBF2 = 0
+ CLR LINEPTR
+ |
+ LDAIM EXBF2
+ STA LINEPTR
+ ]
+ LDAIM /EXBF2
+ STA LINEPTR+1 ;Point to output line
+VAR300
+ RTS
+VARLY0
+ LDYIM 0
+VARLINE
+ BIT ERRSW
+ BMI VAR300 ;Don't substitute if error
+ TYA ;See if no characters to be copied
+ BEQ VARL20
+ PHY ;Save current position
+ DEY
+VARL10
+ LDAIY LINEPTR
+ STAAY EXBF2 ;Copy across initial text
+ DEY
+ BPL VARL10 ;Loop till all done
+ PLY ;Start later in line
+VARL20
+;
+; Now loop looking for string variable substitution
+;
+ STY CHARPTR
+ STY EXPTR
+VARL25
+ LDAIY LINEPTR
+ CMPIM CR
+ BEQ VAR300 ;No substitution needed here
+ CMPIM ";"
+ BEQ VAR300 ;Or here
+ CMPIM """"
+ BEQ VARL30 ;Substitute here
+ CMPIM "$"
+ BEQ VARL30 ;And here
+ CMPIM EOT
+ BEQ VARL60 ;Error here
+ INY
+ BPL VARL25 ;Loop if not too long
+ BRA ELNOVER ;Else moan
+VARL30
+ LDY CHARPTR
+ LDX EXPTR
+ LDAIY LINEPTR ;Get next character
+ CMPIM EOT
+ BEQ VARL60 ;Branch on end of text
+ STAAX EXBF2 ;Copy across
+ CMPIM CR
+ BEQ VAR200 ;Exit at end of line
+ CMPIM "$" ;See if start of parameter
+ BEQ VARL70 ;Branch if so
+VARL32
+ INC CHARPTR
+ BPL VARL50 ;Branch if input not too long
+ELNOVER
+ LDYIM LNOVER
+ BRA VARL65 ;Moan
+VARL50
+ INC EXPTR
+ BPL VARL30 ;Loop if not overlong
+EEXOVER
+ LDYIM EXOVER
+ BRA VARL65
+VARL60
+ LDYIM CRMISS
+VARL65
+ JMP ERROR
+VARL70
+ INC CHARPTR ;Past $
+ BMI ELNOVER ;Branch if line too long
+ INY
+ LDAIY LINEPTR ;Get character after $
+ CMPIM EOT
+ BEQ VARL60 ;Branch if missing END
+ CMPIM "$"
+ BEQ VARL32 ;Translate $$ to $
+ STAAX EXBF2+1 ;Store in case is CR
+ CMPIM CR
+ BEQ VAR200 ;Exit at end of line
+;
+; Now handle variable substitution
+;
+ STY TEMPY ;Save pointer to variable
+ JSR GETVAR ;Get variable name
+ BVS VARL50 ;Branch if no symbol
+ STY CHARPTR ;Update character pointer
+ CLV ;Don't enter name in local table
+ JSR LVLOOK ;See if it is a local variable
+ BCC VARL90 ;Branch if not
+;
+; Now look up the local variable in the main table
+;
+ CLC
+ LDA MDEPTH
+ STA TYPE ;Set up symbol type
+ JSR LSYMB ;Look up in local table
+ LDAIY SYMPT ;Get status byte
+ ANDIM &60
+ EORIM STRING ;See if string
+ BNE VAR150 ;Branch if not
+VARL80
+;
+; Handle copying in of string
+;
+ INY ;Point to pointer
+ LDAIY SYMPT
+ STA DRSTRING
+ INY
+ LDAIY SYMPT ;Point to string parameter block
+ STA DRSTRING+1
+ LDYIM 2
+ LDAIY DRSTRING ;Get current length
+VARL82
+ BEQ VARL30 ;Branch if no substitution
+ STA SLEN ;Else save length
+ LDAI DRSTRING
+ PHA
+ LDYIM 1
+ LDAIY DRSTRING
+ STA DRSTRING+1
+ PLA
+ STA DRSTRING ;Pointer to string
+ DEY ;Y = 0
+ LDX EXPTR ;Where to start writing
+VARL85
+ LDAIY DRSTRING
+ STAAX EXBF2 ;Copy character across
+ INY
+ INX
+ BMI EEXOVER ;Branch if buffer overflow
+ DEC SLEN
+ BNE VARL85 ;Loop till all copied
+ STX EXPTR
+ BEQ VARL82 ;And loop
+VARL90
+ SEC ;Don't insert symbol
+ JSR VSYMB ;See if it's there
+ BCS VAR160 ;Branch if so
+VAR150
+ LDY TEMPY
+ STY CHARPTR ;Reset input pointer
+ BNE VARL50 ;Branch always, checking output pointer
+VAR160
+ LDAIY SYMPT ;Get status
+ EORIM STRING
+ ASLA ;Remove global bit
+ BEQ VARL80 ;Branch if string type
+ BRA VAR150 ;Handle as unknown otherwise
+;
+; =====
+; DGBLS
+; =====
+;
+; Handle the GBLS directive
+;
+; ENTRY:- Y points to rest of line
+;
+; EXIT:-  No registers or flags preserved
+;
+DGBLS
+;
+; First check syntax
+;
+ LDAIY LINEPTR
+ CMPIM "$" ;Look for variable qualifier
+ BNE DGBS60 ;Branch if not
+ INY
+ JSR GETVAR ;Set up variable name
+ BVS DGBS70 ;Branch if bad
+ CLC ;Symbol to be inserted
+ LDAIM STRING
+ STA TYPE
+ JSR VSYMB ;Try to insert
+ BCS DGBS20 ;Branch if was there
+DGBS15
+ LDAIM 0 ;Request no space
+ JSR HEAPMAN ;Get it
+ LDYIM 8
+ LDA HEAPLOC
+ STAIY SYMPT
+ LDA HEAPLOC+1
+ INY
+ STAIY SYMPT ;Point to control block
+ BRA DGBS30
+DGBS20
+ LDYIM STATOFF
+ LDAIY SYMPT
+ EORIM STRING ;Check type
+ ASLA
+ BNE DGBS50 ;Branch if wrong type
+DGBS25
+ INY
+ LDAIY SYMPT
+ STA HEAPLOC
+ INY
+ LDAIY SYMPT
+ STA HEAPLOC+1 ;Point to control block
+ LDYIM 2 ;Point to current length
+ LDAIM 0
+ STAIY HEAPLOC ;Reset it to zero
+DGBS30
+ LDY CHARPTR
+ JMP ECOMLINE
+DGBS60
+ JMP EBADSYN
+DGBS70
+ JMP EBADLAB
+DGBS50
+ JMP EDDVAR
+;
+; =====
+; DLCLS
+; =====
+;
+; Handle the LCLS directive
+;
+; ENTRY:- Y points to rest of line
+;
+; EXIT:-  No registers or flags preserved
+;
+DLCLS
+;
+; First check syntax
+;
+ LDAIM STRING
+ ORA MDEPTH
+ STA TYPE
+ LDA MDEPTH
+ BEQ DLCS40 ;Branch if not in a macro
+ BIT LCLFLAG ;See if allowed this directive now
+ BPL DLCS50 ;Branch if not
+ LDAIY LINEPTR
+ CMPIM "$" ;Look for variable qualifier
+ BNE DGBS60 ;Branch if not
+ INY
+ JSR GETVAR ;Set up variable name
+ BVS DGBS70 ;Branch if bad
+ BIT FF ;V = 1
+ JSR LVLOOK ;Symbol to be inserted in parameter table
+ BCS DGBS50 ;Branch if already in local table
+ JSR LSYMB ;Try to insert
+ BCC DLCS35 ;Branch if not already there
+ LDAIY SYMPT
+ ANDIM &60
+ EORIM STRING ;See if already a string
+ BEQ DGBS25 ;Branch if so
+DLCS35
+;
+; Here we allocate a new string off the heap
+;
+ LDYIM STATOFF
+ LDA TYPE
+ STAIY SYMPT ;Overwrite type
+ BRA DGBS15 ;Common code now
+DLCS40
+ JMP ENOTINM
+DLCS50
+ JMP EDIRTL
+;
+; End of variable handling routines file
+;
+ LNK MASM17

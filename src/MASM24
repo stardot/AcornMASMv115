@@ -1,0 +1,171 @@
+ TTL Macro assembler - Xtube handling routines -> MASM24
+ OPT MASM24
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; This code has been completely changed to run on the TURBO
+; It could be made more efficient by consideration of MSTACK
+;
+; =====
+; GNMAC
+; =====
+;
+; Request opcode to be expanded as a macro
+;
+; ENTRY:- Opcode in SYMBOL
+;
+; EXIT:-  C = 0 <=> macro exists
+;
+GNMAC
+ JSR EXPMAC
+ ASLA ;C = return flag
+ RTS
+;
+; =====
+; SNMAC
+; =====
+;
+; Define a new macro name
+;
+; ENTRY:- Macro name in SYMBOL
+;
+; EXIT:-  No registers or flags preserved
+;
+SNMAC
+ JSR DEFMAC
+ CMPIM 1
+ BCC SNMA20 ;Branch if no error
+ BNE SNMA10 ;Branch if name already exists
+ BRK
+ = MACOVER
+ = "Macro definition table full"
+SNMA10
+ BRK
+ = MACALR
+ = "Doubly defined macro",&00
+SNMA20
+ RTS
+;
+; ======
+; SNLINE
+; ======
+;
+; Store a new macro line
+;
+; ENTRY:- Line pointed to by LPTR
+;
+; EXIT:-  No registers or flags preserved
+;
+SNLINE
+ JSR LMAC
+ CMPIM 1
+ BCC SNMA20 ;Return if no error
+ BEQ SNLI10 ;Branch if assembler error
+ BRK
+ = MACOVER
+ = "Macro space exhausted"
+SNLI10
+ BRK
+ = ASMERR
+ = "No macro being defined"
+BADDEF
+ BRK
+ = ASMERR
+ = &80,"default block call",&00
+;
+; =====
+; GDTAB
+; =====
+;
+; Get parameter default table
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+GDTAB
+ JSR DTGET
+ LDA DEFTAB ;Get length of reception
+ BEQ BADDEF ;Branch if error
+;
+; =====
+; GPTAB
+; =====
+;
+; Get parameter table
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+GPTAB
+ JSR PTGET
+ LDY PARMTAB ;Get length of reception
+ BEQ GPTA20 ;Branch if zero (error indication)
+ LDAIM 0
+ STAAY PARMTAB ;Set up end of local variable table
+ INY ;Don't overwrite local table
+ STY ENDOFF
+ RTS
+GPTA20
+ BRK
+ = ASMERR
+ = &80,"macro local block call",&00
+;
+; =====
+; SDTAB
+; =====
+;
+; Store parameter default table
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+SDTA20
+ BRK
+ = ASMERR
+ = &80,"def send",&00
+SDTA30
+ BRK
+ = MACOVER
+ = "Parameter space exhausted",&00
+SDTAB
+ JSR DMAC
+ CMPIM 1
+ BEQ SDTA20 ;Branch if assembler error
+ BCS SDTA30 ;Branch if run out of space
+;
+; Fall through to SPTAB
+;
+; =====
+; SPTAB
+; =====
+;
+; Store parameter table
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+SPTAB
+ LDA ENDOFF
+ STA PARMTAB ;Set up length
+ JSR PMAC
+ CMPIM 1
+ BEQ SPTA10 ;Branch if assembler error
+ BCS SDTA30 ;Branch if parameter space full
+SPTA05
+ RTS
+SPTA10
+ BRK
+ = ASMERR
+ = &80,"local send",&00
+;
+; End of tube handling routines file
+;
+ LNK MASM30

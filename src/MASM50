@@ -1,0 +1,137 @@
+        TTL     > Masm50 - Macro assembler - I/O processor definitions file
+        OPT     4 ; New page on listing
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; I/O PROCESSOR SIDE CODE
+; =======================
+
+
+; MANIFEST CONSTANTS
+; ==================
+
+; Global variables
+
+        GBLL    $TRUE
+$TRUE   SETL    0=0
+
+        GBLL    $FALSE
+$FALSE  SETL    :LNOT: $TRUE
+
+        GBLL    $ELK    ; Whether this is for the ELK
+$ELK    SETL    $FALSE
+
+
+; Assembler listing options
+
+LISTON  * 1
+LISTOFF * 2
+NEWPAGE * 4
+
+
+; Printing options
+
+DEFOPT  * LISTON:OR:NEWPAGE
+MASM50  * DEFOPT
+MASM51  * DEFOPT
+MASM52  * DEFOPT
+MASM53  * DEFOPT
+
+
+; System entry points
+
+OSWRCH * &FFEE
+OSBYTE * &FFF4
+
+
+; System indirections
+
+USRVEC * &200
+
+
+; The origin of the code
+
+       [ $ELK
+IOORG   * &5C00
+       |
+IOORG   * &7800
+       ]
+
+        < 3
+        > 2
+
+; The software stack (one page)
+
+STACK   * IOORG-&100
+FRAME   * 5 ; The size of one entry on the stack
+
+
+; Stacking tokens
+
+MACRO   * &80
+WHILE   * &00
+
+
+; Character values
+
+CR      * &0D
+
+
+; The I/O processor zero page
+
+ZAREA   * &70
+ZAEND   * &8F
+
+
+; The OSWORD entry registers
+
+BYTEA   * &EF
+BYTEX   * &F0
+BYTEY   * &F1
+
+
+; System function numbers
+
+PAGE    * &B4 ; Request OS high water mark
+MODECH  * &16 ; Change mode on the vdu
+
+
+; OSWORD calls for communication with the host processor
+
+OSWREQ  * 8     ; The byte to tell the tube that this is an OSWORD
+OSWBASE * &E0   ; The lowest call routable through the user vector
+
+        ^       OSWBASE ; Easiest way to allocate OSWORDS contiguously
+
+HOSTCOLD # 1 ; Cold start the software in the host
+GMLINE  # 1 ; Get line from current macro expansion
+EMEXP   # 1 ; End current macro expansion
+OPCMAC  # 1 ; Expand this opcode as a macro
+DTABGET # 1 ; Get the parameter default block for the current macro
+PTABGET # 1 ; Get the parameter value block and local variable tables
+NEWMAC  # 1 ; Add a new macro name to the definitions
+DNEWMAC # 1 ; Add parameter default to the definitions
+PNEWMAC # 1 ; Add parameter block to the definitions
+LNEWMAC # 1 ; Next line of new macro definition
+ENEWMAC # 1 ; End current macro definition
+SWHILE  # 1 ; Mark start of while loop at current line
+RWHILE  # 1 ; Return to start of current while
+EWHILE  # 1 ; End current WHILE
+MAXUOSW # 0 ; The maximum user OSWORD recognized
+
+; Check not too many OSWORDS
+
+       [ @-&100 :SHR: 15 = 0
+        ! 0,"Too many user OSWORDS"
+       ]
+
+; Fatal error numbers
+
+ASMERR  * 4 ; Assembler error
+WHOVER  * 7 ; While stack overflow
+MACERR  * 8 ; Bad attempted macro definition
+MACALR  * 9 ; Macro already exists
+
+
+        LNK     MASM51  ; End of manifest constants file

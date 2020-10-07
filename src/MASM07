@@ -1,0 +1,155 @@
+ TTL Macro assembler - disc handling routines -> MASM07
+ OPT MASM07
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ======
+; SRCLOD
+; ======
+;
+; Load the next source file
+;
+; ENTRY:- File name in CURFILE
+;
+; EXIT:-  No registers or flags preserved
+;
+SRCLOD
+ CLR INTEXT ;Not text-processing
+ [ FS = DFS ;Only need this for DFS
+ LDA SDRIVE
+ JSR DRVSEL ;Select correct drive
+ ]
+ LDAIM CURFILE
+ STA DCB
+ CLR DCB+1
+ LDAIM CREAD ;Get catalogue information
+ JSR CSAV10
+ TAX
+ BEQ SRCL02 ;Branch if not found
+ LDA DATAAD+2
+ ORA DATAAD+3
+ ORA DATAAD+1
+ CMPIM /(ORIGIN-TEXT)
+ BCS SRCL10 ;Branch if definitely too big
+ CLR LOADAD+2
+ CLR LOADAD+3
+ CLR EXADDR ;Load at supplied address
+ ASSERT :MSB:CURFILE = 0
+ [ :LSB:TEXT /= 0
+ LDAIM TEXT
+ STA LOADAD
+ |
+ CLR LOADAD
+ ]
+ LDAIM /TEXT
+ STA LOADAD+1 ;Set up the load address
+SRCL02
+ LDAIM DLOAD ;Loading data
+ JSR CSAV10 ;Load
+ [ $TURBO
+ CLR XSYMPT
+ ]
+ LDA DATAAD+1
+ CLC
+ ADCIM /TEXT
+ STA SYMPT+1
+ LDA DATAAD
+ STA SYMPT
+ LDAIM EOT
+ STAI SYMPT ;Ensure an end of text marker exists
+ LDY HANDLE
+ BEQ SRCL05 ;Branch if not XREF
+ LDAIM &FF
+ JSR OSBPUT
+ LDXIM -FILLEN
+SRCL03
+ LDAZX CURFILE+FILLEN
+ JSR OSBPUT
+ INX
+ BNE SRCL03 ;Output the filename
+SRCL05
+ [ $TURBO
+ LDAIM /SYMSHI
+ STA XSYMPT
+ ]
+ RTS
+SRCL10
+ BRK
+ = FTBIG,"File too big",&00
+;
+; =====
+; CSAVE
+; =====
+;
+; Save code produced on pass 2
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+CSAVE
+ LDA PASS
+ BEQ SRCL05 ;Branch if pass 1
+ SEC
+ LDA CODEP+1
+ SBCIM /CODE
+ ORA CODEP ;See if any code produced
+ BEQ SRCL05 ;Branch if not
+ [ FS = DFS ;Only need this for DFS
+ LDA ODRIVE
+ JSR DRVSEL ;Get correct drive for output
+ ]
+ JSR CUROBJ ;Copy CURFILE into OBJFILE
+ LDAIM OBJFILE
+ STA DCB
+ LDAIM /CODE
+ STA DATAAD+1
+ LDA CODEP
+ STA ENDADD
+ LDA CODEP+1
+ STA ENDADD+1 ;Set up file control block
+ ASSERT :MSB:OBJFILE = 0
+ CLR DCB+1 ;Point to output data
+ CLR DATAAD
+ ASSERT :LSB:CODE=0
+ CLR DATAAD+2
+ CLR DATAAD+3
+ CLR ENDADD+2
+ CLR ENDADD+3
+CSAV05
+ LDAIM 0 ;Save
+CSAV10
+ LDXIM DCB
+ LDYIM /DCB
+ JMP OSFILE
+ [ FS = DFS ;Only need this for DFS
+;
+; ======
+; DRVSEL
+; ======
+;
+; Select drive for I/O
+;
+; ENTRY:- A = drive number in binary
+;
+; EXIT:-  No registers or flags preserved
+;
+DRVSEL
+ ORAIM "0"
+ STA DRVNUM
+ LDXIM DRVCHG
+ LDYIM /DRVCHG
+ JMP OSCLI
+DRVCHG
+ = "DR."
+DRVNUM
+ = &00,CR
+ ]
+;
+; End of disc handling routines file
+;
+ LNK MASM08

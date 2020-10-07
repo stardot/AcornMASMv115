@@ -1,0 +1,768 @@
+ TTL Macro assembler - expression evaluation routines -> MASM20
+ OPT MASM20
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+;
+; =======
+; TOKLOOK
+; =======
+;
+; Look for an operator token, from :SYMBOL:
+;
+; ENTRY:- Symbol in SYMBOL
+;
+; EXIT:-  Y preserved
+;         C = 1 <=> found
+;         A = value
+;         X, P corrupt
+;
+TOKLOOK
+ LDA SYMBOL+5
+ CMPIM SPACE ;Check short enough
+ BNE TOKL50 ;Exit if too long
+ LDXIM 0 ;At start of table
+ PHY
+TOKL10
+ LDAAX TOKTAB
+ BEQ TOKL40 ;Branch if end of table
+ PHX
+ LDYIM &100-5 ;Incrementing counter
+TOKL20
+ LDAAX TOKTAB
+ CMPAY SYMBOL+5-&100
+ BNE TOKL30 ;Branch if not this symbol
+ INX
+ INY
+ BNE TOKL20 ;Loop till all checked
+ PLA
+ PLY ;Restore Y
+ LDAAX TOKTAB ;Get value
+ SEC
+ RTS ;Return found
+TOKL30
+ PLA
+ CLC
+ ADCIM 6 ;On to next symbol
+ TAX
+ BRA TOKL10 ;Branch always
+TOKL40
+ PLY ;Restore Y
+TOKL50
+ CLC
+ RTS ;Return not found
+TOKTAB
+ = "LAND ",LAND
+ = "LOR  ",LOR
+ = "LEOR ",LEOR
+ = "ROR1 ",ROR1
+ = "ROR  ",ROR2
+ = "ROL1 ",ROL1
+ = "ROL  ",ROL2
+ = "SHR1 ",SHR1
+ = "SHR  ",SHR2
+ = "SHL1 ",SHL1
+ = "SHL  ",SHL2
+ = "AND  ",BAND
+ = "OR   ",BOR
+ = "EOR  ",BEOR
+ = "BAND ",BAND
+ = "BOR  ",BOR
+ = "BEOR ",BEOR
+ = "MOD  ",MOD
+ = "BNOT ",BNOT
+ = "NOT  ",BNOT
+ = "LNOT ",LNOT
+ = "LSB  ",LSB
+ = "MSB  ",MSB
+ = "LEN  ",LEN
+ = "CHR  ",STR
+ = "STR  ",CHR ;These two operators were swapped for BASIC compatibility
+ = "LEFT ",LEFT
+ = "RIGHT",RIGHT
+ = "CC   ",CC
+ =  0
+;
+; =====
+; APPLY
+; =====
+;
+; The evaluation applier
+;
+; ENTRY:- Operator in PREVOP
+;         X points to TOS
+;
+; EXIT:-  C = 1 <=> error
+;         Y preserved
+;         X points to new TOS
+;         A, P corrupt
+;
+APPLY
+ LDA PREVOP
+ STX ESTPTR
+ CMPIM KET+1 ;See if bad operator
+ BCS APPL20 ;Branch if not
+ SEC
+ RTS
+APPL20
+ PHY ;Preserve Y
+ JSR GETOP2 ;Get the operand
+ DEX ;Ignore operator
+ LDA PREVOP
+ CMPIM UPLUS ;See if unary
+ BCC APP110 ;Branch if not
+;
+; Here we have a unary operator
+;
+ STX ESTPTR ;Save TOS
+ TAX ;Operator number
+ LDYAX OPEPTR-KET-1 ;Get table pointer
+ LDXAY OPETYPE ;Get number of types
+ INY ;Point to start of types
+APPL30
+ LDAAY OPETYPE ;Get operand type
+ CMP OP2TYPE ;Check o.k.
+ BEQ APPL80 ;Branch if so
+ CMPIM MANARITH ;See if required type arithmetic
+ BNE APPL40 ;Branch if not
+ JSR ST12CHK ;See if one or two character string
+ BCC APPL70 ;Branch if so
+APPL40
+ INY
+ INY
+ DEX ;See if more types
+ BNE APPL30 ;Branch if more operand types
+APPL50
+ SEC ;Return bad
+ LDX ESTPTR ;Point to new TOS
+ PLY ;Restore input Y
+ RTS
+APPL70
+ JSR ST2ARITH ;Convert string to arithmetic type
+APPL80
+ INY ;Past parameter type
+;
+; Now do actual operation
+;
+ LDAAY OPETYPE ;Get result type
+ PHA
+ LDY PREVOP ;Get operator number
+ LDX ESTPTR ;Point to top of stack for STRING operations
+ JSR EVALDO
+ LDX ESTPTR
+ PLA
+ [ MANSTR/=0
+ CMPIM MANSTR
+ ]
+ BEQ APPL90 ;Branch if string type result
+ STAAX ESTACK+2 ;Put type on stack
+ LDA RESLT
+ STAAX ESTACK
+ LDA RESLT+1
+ STAAX ESTACK+1
+ INX
+ INX
+ INX
+ CPX ESTPTR ;Check for stack wraparound
+ STX ESTPTR ;Save new pointer
+ BCC APP100 ;Branch if so
+APPL90
+ CLC
+ PLY
+ RTS
+APP100
+ JMP EXPSTOVER ;Complain about stack overflow
+APP110
+;
+; Handle binary operators
+;
+ JSR GETOP1 ;Get first operand
+ STX ESTPTR ;Save stack pointer
+ LDX PREVOP ;Get operator number
+ LDYAX OPEPTR-KET-1 ;Get table pointer
+ LDXAY OPETYPE ;Get number of operand types
+ INY
+APP120
+ LDAAY OPETYPE ;Get first operand type
+ CMP OP1TYPE ;See if ok
+ BNE APP150 ;Branch if no good
+ INY
+ LDAAY OPETYPE ;Get second operand type
+ CMP OP2TYPE ;See if o.k.
+ BEQ APPL80 ;Branch if so
+;
+; Here the first type is good and the second bad
+;
+ DEY
+ LDAAY OPETYPE
+ CMPIM MANARITH
+ BNE APP140
+ CMPAY OPETYPE+1 ;See if both types requested are arithmetic
+ BNE APP140 ;Branch if not
+ JSR ST12CHK ;Check if operand 2 is short string
+ INY
+ BCC APPL70 ;Branch if so
+ DEY
+APP140
+;
+; Now go on to next operand pair
+;
+ INY
+ INY
+ INY
+ DEX
+ BNE APP120 ;Loop if more to look at
+ BRA APPL50 ;Finish bad
+APP150
+;
+; Here the first operand type is bad
+;
+ CMPIM MANARITH
+ BNE APP140
+ CMPAY OPETYPE+1
+ BNE APP140 ;Branch if not both required arithmetic
+ CLC
+ JSR ST12CHK ;See if can coerce operand 1
+ BCS APP140 ;No good if not
+ LDA OP2TYPE
+ CMPIM MANARITH ;See if second operand ok
+ BEQ APP160 ;Branch if so
+ SEC
+ JSR ST12CHK ;See if can coerce operand 2
+ BCS APP140
+ JSR ST2ARITH ;Coerce it
+APP160
+ JSR ST1ARITH ;Coerce operand 1
+ INY
+ JMP APPL80
+;
+; ======
+; GETOP1
+; ======
+;
+; Get an operand off the stack and put it at OPRND1
+;
+; ENTRY:- X Points to TOS
+;
+; EXIT:-  X points to new TOS (although above X may contain string)
+;         A, Y, P corrupt
+;
+GETOP1
+ LDAIM OPRND1
+ JSR GETOP ;Common code
+ LDA TVTYPE
+ STA OP1TYPE
+ LDA TVLEN
+ STA OP1LEN
+ RTS
+;
+; ======
+; GETOP2
+; ======
+;
+; Get an operand off the stack and put it at OPRND2
+;
+; ENTRY:- X Points to TOS
+;
+; EXIT:-  X points to new TOS (although above X may contain string)
+;         A, Y, P corrupt
+;
+GETOP2
+ LDAIM OPRND2
+ JSR GETOP ;Common code
+ LDA TVTYPE
+ STA OP2TYPE
+ LDA TVLEN
+ STA OP2LEN
+ RTS
+GETOP
+ STA RESLT ;Save pointer to where to put operand
+ TXA
+ TAY
+ LDX RESLT
+ LDAAY ESTACK-2 ;Get possible string length
+ STA TVLEN ;Save
+ LDAAY ESTACK-1 ;Get operand type
+ STA TVTYPE ;Save
+ BNE GETO10 ;Branch if not string
+ TYA
+ SEC
+ SBC TVLEN
+ SBCIM 2
+ STAAX 0 ;Pointer to string
+ LDYIM /ESTACK
+ STYZX 1
+ BRA GETO70
+GETO10
+ BMI GETO20 ;Branch if symbol type
+ LDAAY ESTACK-2
+ STAAX 1
+ LDAAY ESTACK-3
+ STAAX 0
+ BRA GETO60
+GETO20
+ CMPIM SYMUNK
+ BCC GETO30 ;Branch if not unknown or bad
+ ROR DEFINED ;Expression no longer defined
+ LDAIM MANARITH
+ STA TVTYPE ;Arithmetic type
+ CLRAX 0
+ CLRAX 1 ;Value zero
+ BRA GETO60 ;Branch always
+GETO30
+ [ $TURBO
+ LDAIM /SYMSHI
+ STA XSYMPT
+ ]
+ LDAAY ESTACK-2
+ STA SYMPT+1
+ LDAAY ESTACK-3
+ STA SYMPT ;Pointer to symbol table
+ PHY
+ LDAAY ESTACK-1 ;Get type back
+ LDYIM DATAOFF
+ ASLA ;Remove symbol bit
+ LSRA
+ STA TVTYPE ;Save overall type
+ BEQ GETO40 ;Branch if string type
+ LDAIY SYMPT
+ STAAX 0
+ INY
+ LDAIY SYMPT
+ STAAX 1 ;Copy in value
+ BRA GETO50
+GETO40
+ LDAIY SYMPT
+ PHA
+ INY
+ LDAIY SYMPT
+ STA SYMPT+1
+ PLA
+ STA SYMPT ;Point to string control block
+ LDYIM 2
+ LDAIY SYMPT ;Get string length
+ STA TVLEN
+ DEY
+ LDAIY SYMPT
+ STAAX 1
+ DEY
+ LDAIY SYMPT
+ STAAX 0
+GETO50
+ PLY ;Stack pointer back
+GETO60
+ TYA
+ SEC
+ SBCIM 3 ;Down stack by 3
+GETO70
+ TAX ;New TOS
+ RTS
+;
+; The table of operand types for operators
+;
+OPEPTR ;Pointers to operand types table
+ = PLAND-OPETYPE ;Logical AND
+ = PLOR-OPETYPE ;Logical OR
+ = PLEOR-OPETYPE ;Logical EOR
+ = PLESS-OPETYPE ;<
+ = PEQ-OPETYPE ;=
+ = PLEQ-OPETYPE ;<=
+ = PGREA-OPETYPE ;>
+ = PNEQ-OPETYPE ;/=
+ = PGREQ-OPETYPE ;>=
+ = PPLUS-OPETYPE ;+
+ = PMINUS-OPETYPE ;-
+ = PROR1-OPETYPE ;8 bit rotate
+ = PROR2-OPETYPE ;16 bit rotate
+ = PROL1-OPETYPE ;8 bit rotate
+ = PROL2-OPETYPE ;16 bit rotate
+ = PSHR1-OPETYPE ;8 bit shift
+ = PSHR2-OPETYPE ;16 bit shift
+ = PSHL1-OPETYPE ;8 bit shift
+ = PSHL2-OPETYPE ;16 bit shift
+ = PBAND-OPETYPE ;Bitwise AND
+ = PBOR-OPETYPE ;Bitwise OR
+ = PBEOR-OPETYPE ;Bitwise EOR
+ = PLEFT-OPETYPE ;Take left hand end of string
+ = PRIGHT-OPETYPE ;Take right hand end of string
+ = PCC-OPETYPE ;Concenate strings
+ = PSTAR-OPETYPE ;* (Multiply)
+ = PSLASH-OPETYPE ;/ (Divide)
+ = PMOD-OPETYPE ;Remainder
+;
+; Now the unary operators
+;
+ = PUPLUS-OPETYPE ;Unary +
+ = PUMINUS-OPETYPE ;Unary -
+ = PBNOT-OPETYPE ;Bitwise NOT
+ = PLNOT-OPETYPE ;Logical NOT
+ = PLSB-OPETYPE ;Take least byte
+ = PMSB-OPETYPE ;Take highest byte
+ = PLEN-OPETYPE ;Length of string
+ = PSHRIEK-OPETYPE ;Set top bit of bottom byte
+ = PCHR-OPETYPE ;Generate character value
+ = PUSLASH-OPETYPE ;Byte swop
+ = PSTR-OPETYPE ;Arithmetic to string coercion
+;
+; The types themsleves
+; First byte is number of entries
+; The remaining three are:- 1st. operand, 2nd. operand, result
+;
+OPETYPE
+PLAND ;Logical AND
+ =  1
+ = MANLOG,MANLOG,MANLOG
+PLOR ;Logical OR
+ =  1
+ = MANLOG,MANLOG,MANLOG
+PLEOR ;Logical EOR
+ =  1
+ = MANLOG,MANLOG,MANLOG
+PLESS ;<
+ =  2
+ = MANSTR,MANSTR,MANLOG
+ = MANARITH,MANARITH,MANLOG
+PEQ ;=
+ =  2
+ = MANSTR,MANSTR,MANLOG
+ = MANARITH,MANARITH,MANLOG
+PLEQ ;<=
+ =  2
+ = MANSTR,MANSTR,MANLOG
+ = MANARITH,MANARITH,MANLOG
+PGREA ;>
+ =  2
+ = MANSTR,MANSTR,MANLOG
+ = MANARITH,MANARITH,MANLOG
+PNEQ ;/=
+ =  2
+ = MANSTR,MANSTR,MANLOG
+ = MANARITH,MANARITH,MANLOG
+PGREQ ;>=
+ =  2
+ = MANSTR,MANSTR,MANLOG
+ = MANARITH,MANARITH,MANLOG
+PPLUS ;+
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PMINUS ;-
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PROR1 ;8 bit rotate
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PROR2 ;16 bit rotate
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PROL1 ;8 bit rotate
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PROL2 ;16 bit rotate
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PSHR1 ;8 bit shift
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PSHR2 ;16 bit shift
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PSHL1 ;8 bit shift
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PSHL2 ;16 bit shift
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PBAND ;Bitwise AND
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PBOR ;Bitwise OR
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PBEOR ;Bitwise EOR
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PLEFT ;Take left hand end of string
+ =  1
+ = MANSTR,MANARITH,MANSTR
+PRIGHT ;Take right hand end of string
+ =  1
+ = MANSTR,MANARITH,MANSTR
+PCC ;Concenate strings
+ =  1
+ = MANSTR,MANSTR,MANSTR
+PSTAR ;* (Multiply)
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PSLASH ;/ (Divide)
+ =  1
+ = MANARITH,MANARITH,MANARITH
+PMOD ;Remainder
+ =  1
+ = MANARITH,MANARITH,MANARITH
+;
+; Now the unary operators
+;
+PUPLUS ;Unary +
+ =  1
+ = MANARITH,MANARITH
+PUMINUS ;Unary -
+ =  1
+ = MANARITH,MANARITH
+PBNOT ;Bitwise NOT
+ =  1
+ = MANARITH,MANARITH
+PLNOT ;Logical NOT
+ =  1
+ = MANLOG,MANLOG
+PLSB ;Take least byte
+ =  1
+ = MANARITH,MANARITH
+PMSB ;Take highest byte
+ =  1
+ = MANARITH,MANARITH
+PLEN ;Length of string
+ =  1
+ = MANSTR,MANARITH
+PSHRIEK ;Set top bit of bottom byte
+ =  1
+ = MANARITH,MANARITH
+PCHR ;Generate character value
+ =  2
+ = MANLOG,MANSTR
+ = MANARITH,MANSTR
+PUSLASH ;Byte swop
+ =  1
+ = MANARITH,MANARITH
+PSTR ;Coerce arithmetic to string
+ = 1
+ = MANARITH,MANSTR
+;
+; ======
+; EVALDO
+; ======
+;
+; Now do the actual operator
+; The operands have already been type checked
+;
+; ENTRY:- Operands in OPRND1 and OPRND2
+;         String lengths in OP1LEN and OP2LEN where relevant
+;         X points to new TOS
+;
+; EXIT:-  Arithmetic and logical results in RESLT
+;         String results on the stack
+;         ESTPTR points to new TOS
+;         A, X, Y, P corrupt
+;
+EVALDO
+ LDAAY OPHITAB-KET-1
+ PHA
+ LDAAY OPLOTAB-KET-1
+ PHA
+ RTS ;Branch to relevant routine
+OPHITAB
+ = /(AND-1) ;LAND
+ = /(OR-1) ;LOR
+ = /(EOR-1) ;LEOR
+ = /(RELATE-1) ;<
+ = /(RELATE-1) ;>
+ = /(RELATE-1) ;=
+ = /(RELATE-1) ;<=
+ = /(RELATE-1) ;>=
+ = /(RELATE-1) ;/=
+ = /(ADD-1) ;+
+ = /(SUBTR-1) ;-
+ = /(DROR1-1) ;ROR1
+ = /(DROR2-1) ;ROR2
+ = /(DROL1-1) ;ROL1
+ = /(DROL2-1) ;ROL2
+ = /(DSHR1-1) ;SHR1
+ = /(DSHR2-1) ;SHR2
+ = /(DSHL1-1) ;SHL1
+ = /(DSHL2-1) ;SHL2
+ = /(AND-1) ;BAND
+ = /(OR-1) ;BOR
+ = /(EOR-1) ;BEOR
+ = /(DLEFT-1) ;LEFT
+ = /(DRIGHT-1) ;RIGHT
+ = /(DCC-1) ;CC
+ = /(MULT-1) ;*
+ = /(DDIV-1) ;/
+ = /(DMOD-1) ;MOD
+ = /(UADD-1) ;+
+ = /(NEGATE-1) ;-
+ = /(NOT-1) ;BNOT
+ = /(NOT-1) ;LNOT
+ = /(DLSB-1) ;LSB
+ = /(DMSB-1) ;MSB
+ = /(DLEN-1) ;LEN
+ = /(DSHRIEK-1) ;!
+ = /(DCHR-1) ;CHR
+ = /(DUSLASH-1) ;/
+ = /(DSTR-1) ;STR
+ [ .-OPHITAB /= STR-KET
+ ! 0,"Error in EVAL table"
+ ]
+OPLOTAB
+ = AND-1 ;LAND
+ = OR-1 ;LOR
+ = EOR-1 ;LEOR
+ = RELATE-1 ;<
+ = RELATE-1 ;>
+ = RELATE-1 ;=
+ = RELATE-1 ;<=
+ = RELATE-1 ;>=
+ = RELATE-1 ;/=
+ = ADD-1 ;+
+ = SUBTR-1 ;-
+ = DROR1-1 ;ROR1
+ = DROR2-1 ;ROR2
+ = DROL1-1 ;ROL1
+ = DROL2-1 ;ROL2
+ = DSHR1-1 ;SHR1
+ = DSHR2-1 ;SHR2
+ = DSHL1-1 ;SHL1
+ = DSHL2-1 ;SHL2
+ = AND-1 ;BAND
+ = OR-1 ;BOR
+ = EOR-1 ;BEOR
+ = DLEFT-1 ;LEFT
+ = DRIGHT-1 ;RIGHT
+ = DCC-1 ;CC
+ = MULT-1 ;*
+ = DDIV-1 ;/
+ = DMOD-1 ;MOD
+ = UADD-1 ;+
+ = NEGATE-1 ;-
+ = NOT-1 ;BNOT
+ = NOT-1 ;LNOT
+ = DLSB-1 ;LSB
+ = DMSB-1 ;MSB
+ = DLEN-1 ;LEN
+ = DSHRIEK-1 ;!
+ = DCHR-1 ;CHR
+ = DUSLASH-1 ;/
+ = DSTR-1 ;STR
+ [ .-OPLOTAB /= STR-KET
+ ! 0,"Error in EVAL table"
+ ]
+;
+; =======
+; ST12CHK
+; =======
+;
+; Check if given operand is 1 or 2 character string
+;
+; ENTRY:- C = 0 <=> operand 1 required
+;
+; EXIT:-  C = 0 <=> operand is string
+;         A corrupt
+;         X, Y preserved
+;
+ST12CHK
+ PHX ;Preserve X
+ LDXIM OP1TYPE ;Assumed operand 1
+ BCC ST1210 ;Branch if so
+ LDXIM OP2TYPE ;Else operand 2
+ST1210
+ LDAAX 0 ;Get operand type
+ [ MANSTR=0
+ |
+ CMPIM MANSTR
+ ]
+ SEC
+ BNE ST1220 ;Branch if not string type
+ LDAAX 1
+ [ OP1LEN-OP1TYPE /= 1
+ ! 0,"OP1LEN and OP1TYPE not contiguous"
+ ]
+ [ OP2LEN-OP2TYPE /= 1
+ ! 0,"OP2LEN and OP2TYPE not contiguous"
+ ]
+ BEQ ST1220 ;Branch if too short
+ CMPIM 2+1
+ST1220
+ PLX
+ST1A10
+ RTS
+;
+; ========
+; ST1ARITH
+; ========
+;
+; Convert operand 1 from string type to arithmetic type
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+ST1ARITH
+ LDA OP1TYPE
+ [ MANSTR=0
+ |
+ CMPIM MANSTR
+ ]
+ BNE ST1A10 ;Return if already arithmetic
+ PHX
+ LDA OP1LEN ;Length of operand
+ LDXIM OPRND1
+ BRA STARITH ;Common code
+;
+; ========
+; ST2ARITH
+; ========
+;
+; Convert operand 2 from string type to arithmetic type
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+ST2ARITH
+ LDA OP2TYPE
+ [ MANSTR=0
+ |
+ CMPIM MANSTR
+ ]
+ BNE ST1A10 ;Return if already arithmetic
+ PHX
+ LDA OP2LEN ;Length of operand
+ LDXIM OPRND2
+;
+; Fall through STARITH
+;
+STARITH
+ STA SLEN ;Save operand length
+ LDAAX 0
+ STA SYMPT
+ LDAAX 1
+ STA SYMPT+1
+ [ $TURBO
+ CLR XSYMPT
+ ]
+ PHY
+ LDAI SYMPT
+ STAAX 0 ;Low byte
+ LDAIM 0 ;Assume 1 character string
+ DEC SLEN
+ BEQ STAR10 ;Branch if so
+ LDYIM 1
+ LDAIY SYMPT
+STAR10
+ STAAX 1 ;Store high byte
+ [ $TURBO
+ LDAIM /SYMSHI
+ STA XSYMPT
+ ]
+ PLY
+ PLX
+ RTS
+;
+; End of expression evaluation routines file
+;
+ LNK MASM21

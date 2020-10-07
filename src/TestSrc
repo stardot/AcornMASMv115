@@ -1,0 +1,5 @@
+ TTL > TestSrc - Hello World
+ CPU 1
+ ORG &8000
+ LDAIM 1
+ END

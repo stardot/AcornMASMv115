@@ -1,0 +1,667 @@
+ TTL Macro assembler - user input routines -> MASM08
+ OPT MASM08
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ====
+; SAVE
+; ====
+;
+; Handle SAVE command
+;
+; ENTRY:- File name in FIRFILE
+;
+; EXIT:-  No registers or flags preserved
+;
+SAVE
+ LDXIM 15
+SAVE10
+ CLRAX DCB+2
+ DEX
+ BPL SAVE10
+ JSR MESSAGE
+ = "Star",!"t"
+ JSR MESSADD
+ JSR GET110
+ BCS SAVE15 ;Branch if bad
+ LDA TVVAL
+ STA LOADAD
+ STA EXADDR
+ STA DATAAD
+ LDA TVVAL+1
+ STA DATAAD+1
+ STA LOADAD+1
+ STA EXADDR+1
+ [ $TURBO
+ LDAIM USRVOL
+ STA DATAAD+2
+ ]
+ JSR MESSAGE
+ = "En",!"d"
+ JSR MESSADD
+ JSR GET110 ;Get value, checking for EOL
+ BCS SAVE15 ;Branch if bad
+ LDA TVVAL
+ STA ENDADD
+ LDA TVVAL+1
+ STA ENDADD+1
+ [ $TURBO
+ LDAIM USRVOL
+ STA ENDADD+2
+ ]
+ JSR MESSAGE
+ = "Loa",!"d"
+ JSR MESSADD
+ JSR RDLCOM ;Read line and see if comment now
+ BCS SAVE20 ;Branch if so
+ JSR AREEXPR
+SAVE15
+ BCS SAVE30 ;Branch if bad value
+ LDA TVVAL
+ STA LOADAD
+ STA EXADDR
+ LDA TVVAL+1
+ STA LOADAD+1
+ STA EXADDR+1
+ JSR GETPROC ;Request processor
+ STA LOADAD+2
+ STA LOADAD+3
+ STA EXADDR+2
+ STA EXADDR+3
+ JSR MESSAGE
+ = "Exe",!"c"
+ JSR MESSADD
+ JSR RDLCOM ;Read line and see if comment now
+ BCS SAVE20 ;Branch if so
+ JSR AREEXPR
+ BCS SAVE30 ;Branch if bad value
+ LDA TVVAL
+ STA EXADDR
+ LDA TVVAL+1
+ STA EXADDR+1
+ JSR GETPROC ;Request processor
+ STA EXADDR+2
+ STA EXADDR+3
+SAVE20
+ LDAIM FIRFILE
+ STA DCB
+ ASSERT :MSB:FIRFILE=0
+ CLR DCB+1
+ JMP CSAV05 ;Common code
+SAVE30
+ BRK
+ = BADEXP,&80,"expression",0
+MESSADD
+ JSR MESSAGE
+ = SPACE,!"a"
+MESSDDR
+ JSR MESSAGE
+ = "ddress :",!SPACE
+ RTS
+;
+; =====
+; SFILE
+; =====
+;
+; Request a source file name from the user
+;
+; ENTRY:- Y points to rest of command line
+;         File name in SYMBOL
+;
+; EXIT:-  File name in FIRFILE
+;         No registers or flags preserved
+;
+SFILE ROUT
+ JSR GETFNAME ;Get file name
+ JSR EOLCHK ;Check termination
+ STA FIRFILE+FILLEN
+ LDXIM FILLEN-1
+30SFILE
+ LDAAX CURFILE
+ STAAX FIRFILE
+ DEX
+ BPL #30SFILE
+SFIL35
+ RTS
+;
+; ====
+; XREF
+; ====
+;
+; Handle xref request
+;
+; ENTRY:- Y points to rest of command line
+;
+; EXIT:-  No registers or flags preserved
+;
+XREF
+ CLC
+ TYA
+ ADC LINEPTR
+ TAX
+ LDAIM 0
+ ADC LINEPTR+1
+ TAY
+ LDAIM &80 ;Open for output only
+ JSR OSFIND
+ STA HANDLE
+ TAX
+ BNE SFIL35 ;Branch if o.k.
+ BRK
+ = BADF,"Can't open",&00
+;
+; ======
+; PRPROG
+; ======
+;
+; Handle the PRINT command
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  No registers or flags preserved
+;
+PRPROG
+ STA PRINT ;Save it
+ RTS
+;
+; ======
+; STPROG
+; ======
+;
+; Handle the STOP command
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  No registers or flags preserved
+;
+STPROG
+ STA STOP ;Save it
+ RTS
+;
+; ======
+; MLPROG
+; ======
+;
+; Handle the MLEVEL command
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  No registers or flags preserved
+;
+MLPROG
+ INA ;Invert sense
+ STA MLEVEL ;Save it
+ RTS
+;
+; =====
+; TPROG
+; =====
+;
+; Handle the TERSE command
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  No registers or flags preserved
+;
+TPROG
+ INA ;Invert sense
+ STA TERSE ;Save it
+ RTS
+;
+; =====
+; ONOFF
+; =====
+;
+; Get ON/OFF option for PRINT/STOP
+;
+; ENTRY:- Y points to option
+;
+; EXIT:-  A = value
+;
+ONOFF ROUT
+ JSR GETLAB ;Look for the option
+ BVS BADOPT ;Branch if bad
+ LDA SYMBOL
+ CMPIM "O" ;First character must be O
+ BNE BADOPT
+ LDA SYMBOL+1
+ CMPIM "N" ;See if ON
+ BEQ #10ONOFF ;Branch if so
+ CMPIM "F" ;See if OFF
+ BNE BADOPT
+ LDA SYMBOL+2
+ CMPIM "F"
+ BNE BADOPT
+ LDA SYMBOL+3
+ EORIM SPACE
+ BEQ #20ONOFF
+BADOPT
+ BRK
+ = BADO,&80,"option",&00
+10ONOFF
+ LDA SYMBOL+2
+ EORIM SPACE
+ BNE BADOPT
+ DEA
+20ONOFF
+ PHA
+ JSR EOLCHK
+ PLA
+ RTS
+;
+; ========
+; PRLENGTH
+; ========
+;
+; Handle LENGTH
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  No registers or flags preserved
+;
+PRLENGTH
+ STA MLENGTH
+ RTS
+;
+; =======
+; PRWIDTH
+; =======
+;
+; Handle WIDTH
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  No registers or flags preserved
+;
+PRWIDTH
+ STA MWIDTH
+PRWI10
+ RTS
+;
+; =====
+; WLCOM
+; =====
+;
+; Common code for WIDTH and LENGTH
+;
+; ENTRY:- Y points to current position in line
+;
+; EXIT:-  A = value
+;
+WLCOM ROUT
+ JSR DECNUM ;Look for decimal number
+ BCC #30WLCOM ;Branch if bad
+ JSR EOLCHK
+ LDA TVVAL+1
+ BNE #30WLCOM ;Branch if too big
+ LDA TVVAL
+ BPL PRWI10 ;Branch if not too big
+30WLCOM
+ BRK
+ = BADO,&80,"value"
+BADPROC
+ BRK
+ = BADP,&80,"processor",0
+;
+; ======
+; LINEIN
+; ======
+;
+; Copy INLINE into LINEPTR
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X preserved
+;         Y = 0
+;
+LINEIN
+ [ :LSB:INLINE = 0
+ CLR LINEPTR
+ |
+ LDAIM INLINE
+ STA LINEPTR
+ ]
+ LDYIM /INLINE
+ STY LINEPTR+1
+ [ :MSB:INLINE = 1
+ DEY
+ |
+ LDYIM 0
+ ]
+ RTS
+CTBLOCK ;The OSWORD read line control block
+ & INLINE ;Where the buffer is
+ = INLENGTH ;The length of the buffer
+ = SPACE ;Smallest acceptable character
+ = DEL-1 ;Largest acceptable character
+;
+; =======
+; GETPROC
+; =======
+;
+; Get processor for save command
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A = &FF or 0 if o.k.
+;         Otherwise BRK
+;
+GETPROC ROUT
+ JSR MESSAGE
+ = "Proc. (T/P/H/I)",!SPACE
+ JSR RDLCOM ;Get a line and see if all comment
+ LDXIM 0
+ BCS #20GETPROC ;Branch if so
+ ANDIM &FF:EOR:&20 ;Fix case
+ CMPIM "T"
+ BEQ #10GETPROC ;Branch if tube
+ CMPIM "P"
+ BEQ #10GETPROC ;Branch if tube
+ CMPIM "H"
+ BEQ #05GETPROC ;Branch if host
+ CMPIM "I"
+ BNE BADPROC ;Branch if bad
+05GETPROC
+ DEX
+10GETPROC
+ INY
+ JSR EOLCHK
+20GETPROC
+ TXA
+ RTS
+;
+; ========
+; READLINE
+; ========
+;
+; Read a line via OSWORD 0
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Line in INLINE
+;         LINEPTR points to line
+;         Y = 0
+;         BRK if escape
+;
+READLINE
+ LDAIM 0
+ LDXIM CTBLOCK
+ LDYIM /CTBLOCK
+ JSR OSWORD
+ LDA MWIDTH
+ STA WIDTH ;Reset WIDTH as we have put out a CR without CHARPRINT knowing
+ BCC LINEIN ;Branch if ok
+READ10
+ LDAIM ACKESC
+ JSR OSBYTE ;Acknowledge the escape
+ CLR INTEXT ;Not in text for escape
+ BRK
+ = ESCAPE,"Escape"
+ ASSERT .=GET100
+;
+; ===
+; GET
+; ===
+;
+; Handle GET command
+; To get into contiguous store sequence of files
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+GET100
+ BRK
+ = USRERR,&80,"offset",0
+GET
+;
+; First see if file name ends in two decimal digits
+;
+ CLR OFFSET
+ CLR OFFSET+1 ;Assume no offset will be given
+ JSR GETDEC
+ BCS GET10 ;Branch if not
+ JSR MESSAGE
+ = "Offset :",!SPACE
+ JSR RDLCOM ;Get a line and ignore leading spaces
+ JSR CRCHK ;See if empty line
+ BCS GET10 ;Branch if so
+ JSR NUMCHK
+ BCS GET100 ;Branch if no integer found
+ STA OFFSET+1
+ INY
+ JSR LNUMCHK
+ BCS GET100 ;Branch if second digit missing
+ STA OFFSET
+ INY
+ JSR EOLCHK ;Now check for end of line
+GET10
+;
+; Now request address etc.
+;
+ JSR MESSAGE
+ = "New, Own or Previous address (N/O/P) :",!SPACE
+GET20
+ JSR OSRDCH
+ BCS READ10 ;Branch if escape
+ ANDIM &FF-&20 ;Upper case
+ CMPIM "N"
+ BEQ GET80 ;Branch if new address
+ CMPIM "O"
+ BEQ GET70 ;Branch if own address
+ CMPIM "P"
+ BEQ GET40 ;Branch if previous address
+ LDAIM BEL
+ JSR OSWRCH ;Moan
+ BRA GET20 ;Loop
+GET40
+ JSR WRNEWL ;Output the character + CRLF
+GET45
+ JSR SETDCB ;Set up control block
+ JSR CSAV10 ;Load the file
+ LDXIM -2
+ CLC
+GET55
+ LDAAX TVVAL+2
+ ADCAX DATAAD+2
+ STAAX TVVAL+2
+ INX
+ BNE GET55
+GET60
+ JSR CHKOFFS ;Increment offset and check still in range
+ BCS SETD10 ;Branch if not
+ LDX DIGOFF
+ LDA DECIMAL
+ STAAX FIRFILE+1
+ LDA DECIMAL+1
+ STAAX FIRFILE
+ JSR SETDCB
+ LDAIM 5
+ JSR CSAV10 ;Get catalogue information
+ TAX
+ BEQ GET60 ;Branch if no such file
+ BRA GET45 ;Loop
+GET70
+ JSR WRNEWL ;Put out character
+ JSR SETDCB
+ LDAIM 5 ;Get catalogue information
+ JSR CSAV10 ;Try to load the file
+ LDA LOADAD
+ STA TVVAL
+ LDA LOADAD+1
+ STA TVVAL+1
+ BRA GET45 ;Now load the file
+GET80
+ JSR WRNEWL ;Output character + CRLF
+ JSR MESSAGE
+ = !"A"
+ JSR MESSDDR
+ JSR GET110
+ BCC GET45 ;Branch if good expression
+ JMP SAVE30 ;Moan
+GET110
+ LDXIM 1
+ STX PASS
+ STX INDFLAG
+ JSR READLINE ;Get a line
+ JSR AREEXPR ;Get the load address
+ BCC SETD10 ;Branch if good expression
+ JSR NEWLPRINT ;Terminate
+ JMP COMMAND ;Else exit
+;
+; ======
+; SETDCB
+; ======
+;
+; Set up control block for OSFILE in GET
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A = &FF (for LOAD)
+;         X, Y point to control block
+;
+SETDCB
+ LDAIM FIRFILE
+ STA DCB
+ CLR DCB+1
+ CLR LOADAD+3
+ CLR EXADDR ;Force load address
+ [ $TURBO
+ LDAIM USRVOL
+ STA LOADAD+2
+ |
+ CLR LOADAD+2
+ ]
+ ASSERT :MSB:DCB=0
+ LDA TVVAL
+ STA LOADAD
+ LDA TVVAL+1
+ STA LOADAD+1
+ LDAIM &FF
+SETD10
+ RTS
+;
+; =======
+; CHKOFFS
+; =======
+;
+; Generate new offset and check it's in range
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 1 <=> out of range
+;
+CHKOFFS
+ LDXIM -2
+CHKO05
+ INCAX DECIMAL+2
+ LDAAX DECIMAL+2
+ CMPIM "9"+1
+ BCC CHKO10 ;Branch if no overflow
+ LDAIM "0"
+ STAAX DECIMAL+2 ;Reset
+ INX
+ BNE CHKO05
+ RTS
+CHKO10
+ SEC
+ LDA DECIMAL+1
+ ORA DECIMAL
+ BEQ CHKO20 ;Branch if wraparound
+ LDXIM 1
+CHKO15
+ LDAAX DECIMAL
+ CMPAX OFFSET
+ BCC CHKO20 ;Branch if definitely <
+ BNE CHKO20 ;Branch if definitely >
+ DEX
+ BPL CHKO15
+ CLC ;Equals is o.k.
+CHKO20
+ RTS
+;
+; ======
+; GETDEC
+; ======
+;
+; Read last two digits of filename and see if decimal
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, X corrupt
+;         Number in DECIMAL
+;         C = 0 <=> decimal found
+;         Y preserved
+;
+GETDEC
+;
+; First find terminator
+;
+ LDXIM FILLEN
+GETD10
+ DEX
+ LDAAX FIRFILE
+ CMPIM SPACE
+ BEQ GETD10 ;Loop if not at terminator
+ CPXIM 2
+ BCC GETD20 ;Branch if too short
+ JSR NUMCHK ;See if last digit decimal
+ BCS GETD30 ;Branch if not
+ STA DECIMAL
+ LDAAX FIRFILE-1
+ JSR NUMCHK
+ STA DECIMAL+1
+ DEX
+ STX DIGOFF
+ RTS
+GETD20
+ SEC
+GETD30
+ RTS
+;
+; ========
+; GETFNAME
+; ========
+;
+; Get a file name
+;
+; ENTRY:- LINEPTR points to line
+;         Y is offset in line
+;
+; EXIT:-  Y points after file name
+;         File name in CURFILE
+;         X, A corrupt
+;
+GETFNAME ROUT
+ LDXIM FILLEN-1
+ LDAIM SPACE
+10GETFNAME
+ STAAX CURFILE
+ DEX
+ BPL #10GETFNAME
+ LDAIM CR
+ STA CURFILE+FILLEN
+ LDXIM -FILLEN-1
+20GETFNAME
+ LDAIY LINEPTR
+ CMPIM SPACE+1
+ BCC #40GETFNAME ;Branch if end of name
+ CMPIM DEL
+ BCS #40GETFNAME ;Branch if end of name
+ INX
+ BPL #30GETFNAME ;Branch if character won't fit
+ STAZX CURFILE+FILLEN
+30GETFNAME
+ INY
+ BPL #20GETFNAME
+40GETFNAME
+ RTS
+;
+; End of user input routines file
+;
+ LNK MASM09

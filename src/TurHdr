@@ -1,0 +1,6 @@
+; > TurHdr
+
+        GBLL    $TURBO
+$TURBO  SETL    1=1
+
+        LNK MASM00

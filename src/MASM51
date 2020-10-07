@@ -1,0 +1,53 @@
+        TTL     > Masm51 - Macro assembler - I/O processor vars and init
+        OPT     MASM51
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; I/O PROCESSOR SIDE CODE
+; =======================
+
+
+; INITIALIZATION
+; ==============
+
+        ORG     IOORG
+
+        LDAIM   IOOSWORD ;Set up user vector to trap unknown osword calls
+        STA     USRVEC
+        LDAIM   /IOOSWORD
+        STA     USRVEC+1
+        RTS
+
+
+; VARIABLES
+; =========
+
+        ^       ZAREA   ; Zero page allocation
+
+MACSTAR # 2 ; The start of the macro table
+MACNAME # 2 ; The start of the macro names table
+NAMPTR  # 2 ; The pointer to the current macro being defined
+CONSIST # 1 ; The macro table consistency byte
+STAPTR  # 1 ; The software stack pointer
+MACDEF  # 1 ; The macro definition indicator
+MACEXP  # 1 ; The macro expansion indicator
+MACLINE # 2 ; The pointer to the next line of a macro expansion/definition
+MACLEN  # 2 ; The length of the current macro definition/expansion
+CURLINE # 2 ; The pointer to the last line passed back in a macro expansion
+CURLEN  # 2 ; The length remaining after CURLINE
+DEFBLK  # 2 ; The pointer to the current default block
+LOCBLK  # 2 ; The pointer to the current local variable and parameter name blk
+SPTR    # 2 ; A spare pointer
+TEMP    # 1 ; A temporary location for the use of ONSTACK
+MACPTR  # 2 ; The pointer returned from LOOK
+
+
+; Check not off end of zero page allocation
+
+       [ :LNOT: (ZAEND-@ :SHR: 15 = 0)
+        ! 0,"I/O processor zero page over-allocated"
+       ]
+
+
+        LNK     MASM52  ; End of variables and initialization file

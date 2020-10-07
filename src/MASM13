@@ -1,0 +1,576 @@
+ TTL Macro assembler - local label table routines -> MASM13
+ OPT MASM13
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; Layout of the local label table
+; Local labels are one or two digit numbers in the range 0 - 99
+; The typical entry in the local label table therefore consists
+; of a one byte BCD number, plus its two byte value.
+; The only other entries are:-
+; FB Top of macro
+; FC Bottom of macro
+; FD - start of table
+; FE - new routine
+; FF - end of table
+; The table starts with a start of table triple,
+; followed by any number of new routine triples,
+; and label definition triples, and ends with an end of table byte
+; The following variables are used:-
+; LSYMPT - general zero page pointer into the table
+; ELSYMPT - pointer to the end of the table so far
+; LSPTR - pointer to the current position in the table
+; ROUTINE - the name of the current routine
+;
+; ======
+; ZLSYMB
+; ======
+;
+; Clear out the local label table
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+ZLSYMB
+ LDAIM LOCSTART+3
+ STA ELSYMPT
+ LDAIM /(LOCSTART+3)
+ STA ELSYMPT+1 ;Set up end of local label table
+ LDAIM SOLT
+ STA LOCSTART
+ LDAIM EOLT
+ STA LOCSTART+3 ;Set up start and end markers
+ZLSY10
+ [ :LSB:LOCSTART = 0
+ CLR LSPTR
+ |
+ LDAIM LOCSTART
+ STA LSPTR
+ ]
+ LDAIM /LOCSTART
+ STA LSPTR+1
+ RTS
+;
+; ======
+; LABUSE
+; ======
+;
+; Read a label usage, returning the value in TVVAL
+;
+; ENTRY:- Y points to current position in line (past #)
+;         LINEPTR points to line
+;
+; EXIT:-  Carry set <=> found in table
+;         Value in TVVAL if found
+;         No registers or flags preserved
+;         Y points to rest of line
+;         V = 1 <=> error
+;
+LABUSE ROUT
+ LDAIM BLOOK+FLOOK+ABOVE
+ STA LTYPE ;Set default status
+;
+; First check for forward/backward option
+;
+ LDAIY LINEPTR
+ ANDIM &DF ;Case equate
+ CMPIM "F"
+ BNE #10LABUSE ;Branch if not forwards
+ LDA LTYPE
+ ANDIM &FF-BLOOK ;Set not backwards
+ BRA #20LABUSE
+10LABUSE
+ CMPIM "B"
+ BNE #30LABUSE ;Branch if not backward look
+ LDA LTYPE
+ ANDIM &FF-FLOOK ;Set not forward
+20LABUSE
+ STA LTYPE ;Update status
+ INY
+ LDAIY LINEPTR ;Get next character
+ ANDIM &DF ;Case equate
+30LABUSE
+;
+; Now check for macro depth option
+;
+ CMPIM "T"
+ BNE #40LABUSE ;Branch if not this level only
+ LDA LTYPE
+ ANDIM &FF-&30
+ ORAIM TLEVEL
+ BRA #50LABUSE
+40LABUSE
+ CMPIM "A"
+ BNE #60LABUSE ;Branch if not any level
+ LDA LTYPE
+ ORAIM ANYLEVEL
+ ASSERT ANYLEVEL=&30
+50LABUSE
+ STA LTYPE ;Update status
+ INY
+60LABUSE
+;
+; Now decode label number, and optional routine name
+;
+ LDAIY LINEPTR ;Get next character
+ JSR LNUMGET ;The label number (note Y saved here)
+ BCC #80LABUSE ;Branch if o.k.
+70LABUSE
+ BIT FF ;Set V = 1
+ RTS
+80LABUSE
+ JSR ROUTGET ;Get optional routine name
+ BCS #70LABUSE ;Branch if bad
+ JSR SEARCH
+ INY
+ LDAIY LSYMPT
+ STA TVVAL
+ INY
+ LDAIY LSYMPT
+ STA TVVAL+1 ;Get the label value
+ CLV ;Return good
+ LDY CHARPTR
+ RTS
+;
+; ======
+; LOCLAB
+; ======
+;
+; Try for local label definition
+;
+; ENTRY:- Y points to start of definition
+;
+; EXIT:-  Carry clear <=> o.k.
+;         CHARPTR updated
+;         X, Y, A corrupt
+;
+LOCLAB
+ JSR LNUMCHK ;Look for digit
+ BCC LABDEF ;On to definition stage if ok
+ JMP EBADLAB ;Else moan
+;
+; ======
+; LABDEF
+; ======
+;
+; Define a local label, with the value given in PROGC
+;
+; ENTRY:- Y points to start of definition
+;         A = first digit, assumed numeric
+;
+; EXIT:-  Carry clear <=> o.k.
+;         CHARPTR updated
+;         X, Y, A corrupt
+;
+LABDEF ROUT
+ JSR LNUMGET ;Handle digit portion
+ BCS #10LABDEF ;Branch if bad
+ JSR ROUTGET ;Handle optional routine name
+ BCS #10LABDEF ;Branch if bad
+ LDX PASS
+ BEQ NEWLAB ;Branch if first pass
+ JSR UPDLAB ;Else pass label definition on second pass
+ CLC ;Good value
+10LABDEF
+ RTS
+;
+; ======
+; NEWLAB
+; ======
+;
+; Add a new label definition to the local label table
+; Pass 1 only
+;
+; ENTRY:- A = label number
+;         PROGC contains value
+;
+; EXIT:-  No registers preserved
+;         C = 0
+;
+NEWLAB
+ JSR LSUPDATE ;Update current position pointer
+ STAI ELSYMPT
+ LDYIM 1
+ LDA PROGC ;Put in value
+ STAIY ELSYMPT
+ LDA PROGC+1
+ INY
+ STAIY ELSYMPT
+ BNE NEWR20 ;Branch always to common code
+;
+; =======
+; NEWROUT
+; =======
+;
+; Add a new routine name or skip the table entry on pass 2
+;
+; ENTRY:- Symbol in SYMBOL
+;
+; EXIT:-  Symbol in ROUTINE
+;         A, Y, P corrupt
+;         X preserved
+;         C = 0
+;
+NEWROUT
+ LDYIM 5
+NEWR10
+ LDAAY SYMBOL
+ STAAY ROUTINE ;Copy across
+ DEY
+ BPL NEWR10
+ LDAIM NEWRT
+NEWR15
+ LDY PASS
+ BNE UPDLAB ;Branch if pass 2
+ STAI ELSYMPT ;New routine
+ JSR LSUPDATE ;Update current position pointer
+NEWR20
+ CLC
+ LDA ELSYMPT
+ ADCIM 3
+ STA ELSYMPT
+ BCC NEWR30 ;Point to next entry
+ INC ELSYMPT+1
+ LDA ELSYMPT+1
+ CMPIM LOCEHI ;See if table too long
+ BCC NEWR30
+ JSR MESSAGE
+ = "Local labe",!"l"
+ JMP TABOVER
+NEWR30
+ LDAIM EOLT
+ STAI ELSYMPT
+NEWR40
+ RTS
+;
+; =====
+; UPMAC
+; =====
+;
+; Update the local label table when leaving a macro
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+UPMAC
+ LDAIM MACUP
+UPMA10
+ LDY MLEVEL
+ BEQ NEWR15
+ RTS
+;
+; =====
+; DNMAC
+; =====
+;
+; Update the local label table when entering a macro
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DNMAC
+ LDAIM MACDOWN
+ BRA UPMA10
+;
+; ======
+; UPDLAB
+; ======
+;
+; Update past local label definition
+; Pass 2 only
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+UPDLAB ROUT
+ CLC
+ LDAIM 3
+ ADC LSPTR
+ STA LSPTR
+ BCC #10UPDLAB
+ INC LSPTR+1 ;Update current pointer
+10UPDLAB
+ RTS
+;
+; ======
+; SEARCH
+; ======
+;
+; Search from current position for given label
+;
+; ENTRY:- A = label number
+;         LTYPE specifies search type
+;
+; EXIT:-  A preserved
+;         C = 1 <=> label found
+;         LSYMPT points to label if found
+;         X corrupt
+;         Y = 0
+;         V = 0
+;
+SEARCH ROUT
+ BIT LTYPE
+ BPL #10SEARCH ;Branch if not backwards
+ ASSERT BLOOK=&80
+ JSR SBACK
+ BCS #20SEARCH ;Branch if found it
+10SEARCH
+ ASSERT FLOOK=&40
+ CLC
+ BIT LTYPE
+ BVC #20SEARCH ;Branch if not forwards
+ JSR SFORW
+20SEARCH
+ LDYIM 0
+ CLV
+ RTS
+;
+; =====
+; SBACK
+; =====
+;
+; Search backwards from current position for given label
+;
+; ENTRY:- A = label number
+;
+; EXIT:-  A, Y preserved
+;         C = 1 <=> label found
+;         LSYMPT points to label if found
+;         X corrupt
+;
+SBACK ROUT
+ TAX
+ LDA MDEPTH
+ STA TMDEPTH ;Save current macro depth
+ JSR LSTRAN ;LSPTR -> LSYMPT
+10SBACK
+ TXA
+ CMPI LSYMPT ;See if found entry
+ BEQ #50SBACK
+ LDAI LSYMPT
+ CMPIM SOLT ;See if searched too far
+ BCS NOTFOUND ;Branch if so
+ CMPIM MACDOWN
+ BCC #30SBACK ;Branch if not a macro entry
+ BEQ #20SBACK ;Branch if leaving top of macro
+ INC TMDEPTH ;Entering end of macro
+ BRA #30SBACK
+20SBACK
+ DEC TMDEPTH ;Leaving top of macro
+30SBACK
+ SEC
+ LDA LSYMPT
+ SBCIM 3
+ STA LSYMPT
+ BCS #10SBACK ;Loop for more
+ DEC LSYMPT+1
+ BCC #10SBACK ;Branch always
+NOTFOUND
+ CLC ;Bad exit
+ TXA ;Preserve A
+ RTS
+50SBACK
+ JSR MVCHECK ;Check macro conditions
+ BCC #30SBACK
+ RTS
+;
+; =====
+; SFORW
+; =====
+;
+; Search forwards from current position for given label
+;
+; ENTRY:- A = label number
+;
+; EXIT:-  A, Y preserved
+;         C = 1 <=> label found
+;         LSYMPT points to label if found
+;         X corrupt
+;
+SFORW ROUT
+ TAX
+ LDA MDEPTH
+ STA TMDEPTH ;Save current macro depth
+ JSR LSTRAN ;LSPTR -> LSYMPT
+30SFORW
+ CLC
+ LDA LSYMPT
+ ADCIM 3
+ STA LSYMPT
+ BCC #10SFORW ;Loop for more
+ INC LSYMPT+1
+10SFORW
+ TXA
+ CMPI LSYMPT ;See if found entry
+ BEQ #60SFORW
+ LDAI LSYMPT
+ CMPIM NEWRT ;See if searched too far
+ BCS NOTFOUND ;Branch if so
+ CMPIM MACDOWN
+ BCC #30SFORW ;Branch if not a macro entry
+ BEQ #20SFORW ;Branch if entering top of macro
+ DEC TMDEPTH ;Leaving end of macro
+ BRA #30SFORW
+20SFORW
+ INC TMDEPTH ;Leaving top of macro
+ BRA #30SFORW
+60SFORW
+ JSR MVCHECK ;Check macro conditions
+ BCC #30SFORW
+ RTS
+;
+; =======
+; LNUMGET
+; =======
+;
+; Get the local label number
+;
+; ENTRY:- A = first digit
+;         Y  points to first digit
+;
+; EXIT:-  C = 0 <=> O.k.
+;         A = label value
+;         Y, CHARPTR updated
+;
+LNUMGET ROUT
+ JSR NUMCHK
+ BCS #20LNUMGET ;Branch if not a number
+ ANDIM &F
+ STA DIGIT
+ INY ;Point to next character
+ JSR LNUMCHK
+ BCS #10LNUMGET ;Branch if no second digit
+ ANDIM &F
+ ASL DIGIT
+ ASL DIGIT
+ ASL DIGIT
+ ASL DIGIT
+ ORA DIGIT
+ INY
+10LNUMGET
+ STY CHARPTR
+ CLC
+ RTS
+20LNUMGET
+ LDYIM BADLOC
+ BRA ROUT40
+;
+; =======
+; ROUTGET
+; =======
+;
+; Get an optional routine name and check it
+;
+; ENTRY:- Y points to first character
+;
+; EXIT:-  C = 0 <=> o.k.
+;         A preserved
+;         Y, CHARPTR updated
+;
+ROUTGET ROUT
+ PHA
+ JSR GETLAB ;Look for a routine name
+ BVS #20ROUTGET ;Branch if missing
+ LDA ROUTINE
+ BEQ #20ROUTGET ;Branch if no set routine name
+ LDXIM -6
+10ROUTGET
+ LDAAX SYMBOL+6
+ CMPAX ROUTINE+6
+ BNE #30ROUTGET ;Branch if mismatch
+ INX
+ BNE #10ROUTGET ;Loop if more to compare
+20ROUTGET
+ PLA
+ CLC
+ RTS ;Return good
+30ROUTGET
+ PLA
+ LDYIM BADROUT ;Error number
+ROUT40
+ SEC ;Indicate error
+ JMP ERROR ;Moan
+;
+; ======
+; LSTRAN
+; ======
+;
+; Transfer LSPTR to LSYMPT
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  P corrupt
+;         A, X, Y preserved
+;
+LSTRAN
+ PHA
+ LDA LSPTR
+ STA LSYMPT
+ LDA LSPTR+1
+ STA LSYMPT+1
+ PLA
+ RTS
+;
+; ========
+; LSUPDATE
+; ========
+;
+; Copy ELSYMPT into LSPTR
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, A preserved
+;         Y, P corrupt
+;
+LSUPDATE
+ LDY ELSYMPT
+ STY LSPTR
+ LDY ELSYMPT+1
+ STY LSPTR+1 ;Update current position pointer
+ RTS
+;
+; =======
+; MVCHECK
+; =======
+;
+; Check macro conditions
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 1 <=> o.k.
+;         X, Y preserved
+;         A, P corrupt
+;
+MVCHECK ROUT
+ SEC
+ LDA MLEVEL
+ BNE #10MVCHECK ;Branch if no check required
+ LDAIM &30
+ AND LTYPE ;Get allowable value
+ CMPIM ANYLEVEL
+ BCS #10MVCHECK ;O.k. if any level
+ CMPIM ABOVE
+ LDA MDEPTH
+ BCC #20MVCHECK ;Branch if this level only
+ CMP TMDEPTH
+10MVCHECK
+ RTS
+20MVCHECK
+ CMP TMDEPTH
+ BEQ #10MVCHECK
+ CLC
+ RTS
+;
+; End of local label table routines file
+;
+ LNK MASM14

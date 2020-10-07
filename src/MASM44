@@ -1,0 +1,445 @@
+ TTL Macro assembler - tube handling routines -> Masm44
+ OPT MASM44
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; =====
+; SNMAC
+; =====
+;
+; Send a new macro name to the I/O processor
+;
+; ENTRY:- Macro name in SYMBOL
+;
+; EXIT:-  No registers or flags preserved
+;
+SNMAC
+ JSR SETTBLK ;Set up for transmit
+ LDAIM NEWMAC
+ JSR UOSWORD
+ LDY RETVAL
+ BEQ SNMA20 ;Branch if no error
+ DEY
+ BNE SNMA10 ;Branch if name already exists
+ BRK
+ = MACOVER
+ = "Macro definition table full"
+SNMA10
+ BRK
+ = MACALR
+ = "Doubly defined macro",&00
+;
+; =====
+; GNMAC
+; =====
+;
+; Request opcode to be expanded as a macro
+;
+; ENTRY:- Opcode in SYMBOL
+;
+; EXIT:-  C = 0 <=> macro exists
+;
+GNMAC
+ JSR SETTBLK
+ LDAIM OPCMAC ;OSWORD number
+ JSR UOSWORD ;Send it
+ ASL RETVAL ;C = return flag
+SNMA20
+ RTS
+;
+; ======
+; SNLINE
+; ======
+;
+; Send a new macro line to the I/O processor
+;
+; ENTRY:- Line pointed to by LPTR
+;
+; EXIT:-  No registers or flags preserved
+;
+SNLINE
+ LDA LPTR
+ STA TBLOCK
+ LDA LPTR+1
+ STA TBLOCK+1
+ JSR RETRB ;Set up receive block
+ LDXIM 1 ;Receive one byte
+ LDYIM &7F ;Send 127 bytes
+ LDAIM LNEWMAC
+ JSR UOSWORD ;Do the transfer
+ LDY RETVAL
+ BEQ SNMA20 ;Return if no error
+ DEY
+ BEQ SNLI10 ;Branch if assembler error
+ BRK
+ = MACOVER
+ = "Macro space exhausted"
+SNLI10
+ BRK
+ = ASMERR
+ = "No macro being defined",&00
+;
+; ======
+; MGLINE
+; ======
+;
+; Get next line from current macro definition
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Line put in MACLINE
+;         No registers or flags preserved
+;
+MGLINE
+ ASSERT :LSB:MACLINE = 0
+ LDAIM /MACLINE
+ STA RBLOCK+1
+ JSR TRSET
+ LDAIM GMLINE
+ JSR UOSWORD
+ LDA MACLINE ;First byte is error code
+ CMPIM SPACE
+ BCS SNMA20 ;Branch if o.k.
+ CMPIM CR
+ BEQ SNMA20 ;Branch if blank line
+ BRK
+ = ASMERR
+ = "Current macro exhausted, or no current macro"
+BADDEF
+ BRK
+ = ASMERR
+ = &80,"default block call",&00
+;
+; =====
+; GDTAB
+; =====
+;
+; Get parameter default table from I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+GDTAB
+ ASSERT :LSB:DEFTAB = 0
+ LDAIM /DEFTAB
+ STA RBLOCK+1
+ JSR TRSET
+ LDAIM DTABGET
+ JSR UOSWORD ;Request the bytes
+ LDA DEFTAB ;Get length of reception
+ BEQ BADDEF ;Branch if error
+;
+; =====
+; GPTAB
+; =====
+;
+; Get parameter table from I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+ ASSERT :LSB:PARMTAB = 0
+ LDAIM /PARMTAB
+ STA RBLOCK+1
+ JSR TRSET
+ LDAIM PTABGET
+ JSR UOSWORD ;Request the bytes
+ LDY PARMTAB ;Get length of reception
+ BEQ GPTA20 ;Branch if zero (error indication)
+ LDAIM 0
+ STAAY PARMTAB ;Set up end of local variable table
+ INY ;Don't overwrite local table
+ STY ENDOFF
+ RTS
+GPTA20
+ BRK
+ = ASMERR
+ = &80,"macro local block call"
+ ASSERT . = SDTA20
+;
+; =====
+; SDTAB
+; =====
+;
+; Send parameter default table to I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+SDTA20
+ BRK
+ = ASMERR
+ = &80,"def send"
+SDTA30
+ BRK
+ = MACOVER
+ = "Parameter space exhausted",&00
+SDTAB
+ JSR RETRB ;RBLOCK := RETVAL
+ CLR TBLOCK
+ ASSERT :LSB:DEFTAB = 0
+ LDXIM 1 ;Receive one byte
+ LDAIM /DEFTAB
+ STA TBLOCK+1
+ LDYIM &7F ;Transmit 127 bytes
+ LDAIM DNEWMAC
+ JSR UOSWORD ;Send the bytes
+ LDA RETVAL ;Get return code
+ CMPIM 1
+ BEQ SDTA20 ;Branch if assembler error
+ BCS SDTA30 ;Branch if run out of space
+;
+; Fall through to SPTAB
+;
+; =====
+; SPTAB
+; =====
+;
+; Send parameter table to I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+ LDA ENDOFF
+ STA PARMTAB ;Set up length
+ JSR RETRB ;RBLOCK := RETVAL
+ CLR TBLOCK
+ ASSERT :LSB:PARMTAB = 0
+ LDXIM 1 ;Receive one byte
+ LDAIM /PARMTAB
+ STA TBLOCK+1
+ LDYIM &7F ;Transmit 127 bytes
+ LDAIM PNEWMAC
+ JSR UOSWORD ;Send the bytes
+ LDA RETVAL ;Get return code
+ CMPIM 1
+ BEQ SPTA10 ;Branch if assembler error
+ BCS SDTA30 ;Branch if parameter space full
+SPTA05
+ RTS
+SPTA10
+ BRK
+ = ASMERR
+ = &80,"local send",&00
+;
+; ==
+; SW
+; ==
+;
+; Send a while stack request to the I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;
+SW
+ LDAIM SWHILE
+ BRA UOSW0
+;
+; =====
+; UOSW1
+; =====
+;
+; Pass user osword call with no transmit block
+; and a one byte receive block
+;
+; ENTRY:- A = OSWORD number
+;
+; EXIT:-  No registers or flags preserved
+;
+UOSW1 ROUT
+ JSR RETRB ;RBLOCK := RETVAL
+ LDXIM 1 ;Receive one byte
+ LDYIM 0 ;Transmit no bytes
+ JSR UOSWORD
+ LDY RETVAL
+ CPYIM 1
+ BCC SPTA05 ;Branch if no error
+ BEQ #20UOSW1 ;Branch if fatal error
+ JMP ERROR ;Else complain
+20UOSW1
+ BRK
+ = ASMERR
+ = "Error in UOSW1",&00
+;
+; ==
+; KW
+; ==
+;
+; Send a while delete request to the I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;         MINUS set
+;
+KW
+ LDAIM EWHILE
+ BRA UOSW0
+;
+; ==
+; RW
+; ==
+;
+; Send a while return request to the I/O processor
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;         MINUS set
+;
+RW
+ LDAIM RWHILE
+;
+; Fall through to UOSW0
+;
+; =====
+; UOSW0
+; =====
+;
+; Pass user osword call with no transmit or receive blocks
+;
+; ENTRY:- A = OSWORD number
+;
+; EXIT:-  No registers or flags preserved
+;         MINUS set
+;
+UOSW0
+ LDXIM 0 ;Receive no bytes
+ LDYIM 0 ;Transmit no bytes
+;
+; And fall through to UOSWORD
+;
+; =======
+; UOSWORD
+; =======
+;
+; The special OSWORD routines for transmitting across the tube
+;
+; ENTRY:- TBLOCK points to data to transmit
+;         RBLOCK points to where to receive data
+;         Y = number of bytes to transmit
+;         X = number of bytes to receive
+;         A = OSWORD number
+;
+; EXIT:-  No registers or flags preserved
+;         MINUS set
+;
+UOSWORD ROUT
+ PHA
+ LDAIM OSWREQ ;Request OSWORD in host
+ JSR W2BYTE ;Write to register 2
+ PLA
+ JSR W2BYTE ;Now send OSWORD number
+ TYA
+ JSR W2BYTE ;Transmit number of bytes for transmission
+ DEY
+ BMI #20UOSWORD ;Branch if none to transmit
+10UOSWORD
+ LDAIY TBLOCK
+ JSR W2BYTE ;Write across one byte
+ DEY
+ BPL #10UOSWORD ;Loop till finished
+20UOSWORD
+ TXA
+ TAY
+ JSR W2BYTE ;Number of bytes to be received
+ DEY
+ BMI #40UOSWORD
+30UOSWORD
+ JSR R2BYTE ;Receive one byte
+ STAIY RBLOCK
+ DEY
+ BPL #30UOSWORD
+40UOSWORD
+ RTS
+W2BYTE
+ BIT R2STAT
+ BVC W2BYTE
+ STA R2DATA
+ RTS
+R2BYTE
+ BIT R2STAT
+ BPL R2BYTE
+ LDA R2DATA
+ RTS
+;
+; =====
+; RETRB
+; =====
+;
+; RBLOCK := RETVAL
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, P corrupt
+;         A, Y preserved
+;
+RETRB
+ LDXIM RETVAL
+ STX RBLOCK
+ LDXIM /RETVAL
+ STX RBLOCK+1
+ RTS
+;
+; =======
+; SETTBLK
+; =======
+;
+; Set up for transmit to GNMAC and SNMAC
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Y = 6, X = 1
+;         A, P corrupt
+;
+SETTBLK
+ LDAIM SYMBOL
+ STA TBLOCK
+ LDAIM /SYMBOL
+ STA TBLOCK+1 ;Point to block for transmission
+ JSR RETRB ;And block for reception
+ LDYIM 6 ;Send 6 bytes
+ LDXIM 1 ;Receive 1
+ RTS
+;
+; =====
+; TRSET
+; =====
+;
+; Set up for 127 byte receive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  Y = 0
+;         X = 127
+;         A preserved
+;         P corrupt
+;
+TRSET
+ LDYIM 0
+ STY RBLOCK
+ LDXIM 127
+ RTS
+;
+; End of tube handling routines file
+;
+; End of the code
+;
+FINISH
+
+ [ &F800 < .
+        !       8,"Code too long"
+ |
+        %       &F800-.         ; Pad out for consistency
+ ]
+
+        END

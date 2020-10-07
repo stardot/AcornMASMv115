@@ -1,0 +1,453 @@
+ TTL Macro assembler - heap management routines -> MASM18
+ OPT MASM18
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; =======
+; HEAPMAN
+; =======
+;
+; Allocate initial space + control block for string entry in symbol table
+; Space is allocated as follows:-
+;    4 bytes for the control block
+;      (2 byte pointer to string area
+;       1 byte current length
+;       1 byte maximum length)
+;    n bytes for string
+;    n is IF A<8 THEN 8 ELSE n+8
+;
+; ENTRY:- A = requested allocation
+;
+; EXIT:-  No exit if unable to allocate
+;         Otherwise HEAPLOC points to available space
+;         No registers or flags preserved
+;         C = 1
+;
+HEAPMAN
+ LDX HEAPPTR
+ STX HEAPLOC
+ LDX HEAPPTR+1
+ STX HEAPLOC+1
+ PHA
+ LDAIM 4 ;4 bytes for control block
+ JSR HEAPADD
+ LDA HEAPPTR
+ STAI HEAPLOC ;Set up pointer in control block
+ LDYIM 1
+ LDA HEAPPTR+1
+ STAIY HEAPLOC
+ PLA ;Length back
+ INY
+ STAIY HEAPLOC ;Set up current length
+ LDXIM 8
+ CMPIM 8
+ BCC HEAP20 ;Branch if 8 sufficient
+ ADCIM 7 ;Else do n+8
+ TAX
+ BCC HEAP20 ;Branch if not too many
+ LDXIM &FF ;Else allocate maximum
+HEAP20
+ TXA ;Actual allocation
+ INY
+ STAIY HEAPLOC ;Maximum allocation for this string
+HEAP25
+ JSR HEAPADD
+ LDA HEAPPTR+1
+ CMPIM /CODE ;Check for overflow
+ BCS HEAP40 ;Branch if so
+HEAP35
+ RTS
+HEAP40
+ BRK
+ = HEAPOVER,"Heap overflow",&00
+HEAPADD
+ CLC
+ ADC HEAPPTR ;Update
+ STA HEAPPTR
+ BCC HEAP35
+ INC HEAPPTR+1
+ RTS
+;
+; =========
+; EXTSTRING
+; =========
+;
+; Extend the allocation for a string
+;
+; ENTRY:- HEAPLOC points to string control block
+;         A = requested size
+;
+; EXIT:-  Control block updated
+;         No registers or flags preserved
+;
+EXTSTRING
+ LDYIM 2 ;Point to current size
+ STAIY HEAPLOC ;Update for new string
+ INY ;Now point to maximum size
+ CMPIY HEAPLOC
+ BCC HEAP35 ;Branch if room
+ BEQ HEAP35 ;Ditto
+ ADCIM 7 ;Allocate 8 bytes over (C was 1)
+ BCC EXTS10 ;Branch if not too big
+ LDAIM &FF ;Else allocate maximum
+EXTS10
+ STAIY HEAPLOC ;New maximum size
+ LDYIM 1
+ PHA
+ LDA HEAPPTR+1
+ STAIY HEAPLOC
+ DEY
+ LDA HEAPPTR
+ STAIY HEAPLOC ;Write in new pointer
+ PLA
+ BRA HEAP25
+;
+; The table of directive handling routines
+;
+DTABLO
+ ASSERT .=DTABLO+TEND
+ = DEND-1
+ [ .-DTABLO-TLNK=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DLNK-1
+ [ .-DTABLO-TORG=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DORG-1
+ [ .-DTABLO-TOPT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DOPT-1
+ [ .-DTABLO-TTTL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DTTL-1
+ [ .-DTABLO-TWHILE=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DWHILE-1
+ [ .-DTABLO-TWEND=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DWEND-1
+ [ .-DTABLO-TMACRO=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = HMACRO-1
+ [ .-DTABLO-TMEXIT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DMEXIT-1
+ [ .-DTABLO-TMEND=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DMEND-1
+ [ .-DTABLO-TGBLA=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DGBLA-1
+ [ .-DTABLO-TGBLL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DGBLL-1
+ [ .-DTABLO-TGBLS=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DGBLS-1
+ [ .-DTABLO-TLCLA=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DLCLA-1
+ [ .-DTABLO-TLCLL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DLCLL-1
+ [ .-DTABLO-TLCLS=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DLCLS-1
+ [ .-DTABLO-TSETA=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DSETA-1
+ [ .-DTABLO-TSETL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DSETL-1
+ [ .-DTABLO-TSETS=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DSETS-1
+ [ .-DTABLO-TIF=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DIF-1
+ [ .-DTABLO-TELSE=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DELSE-1
+ [ .-DTABLO-TFI=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DFI-1
+ [ .-DTABLO-TMNOTE=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DMNOTE-1
+ [ .-DTABLO-THASH=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DHASH-1
+ [ .-DTABLO-TSTAR=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DSTAR-1
+ [ .-DTABLO-TEQUAL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DEQUAL-1
+ [ .-DTABLO-TPERC=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DPERC-1
+ [ .-DTABLO-TAMP=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DAMP-1
+ [ .-DTABLO-THAT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DHAT-1
+ [ .-DTABLO-TSDRV=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DSDRV-1
+ [ .-DTABLO-TODRV=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DODRV-1
+ [ .-DTABLO-TASSERT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DASSERT-1
+ [ .-DTABLO-TCPU=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DCPU-1
+ [ .-DTABLO-TROUT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = DROUT-1
+DTABHI
+ [ .-DTABHI-TEND=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DEND-1)
+ [ .-DTABHI-TLNK=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DLNK-1)
+ [ .-DTABHI-TORG=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DORG-1)
+ [ .-DTABHI-TOPT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DOPT-1)
+ [ .-DTABHI-TTTL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DTTL-1)
+ [ .-DTABHI-TWHILE=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DWHILE-1)
+ [ .-DTABHI-TWEND=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DWEND-1)
+ [ .-DTABHI-TMACRO=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(HMACRO-1)
+ [ .-DTABHI-TMEXIT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DMEXIT-1)
+ [ .-DTABHI-TMEND=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DMEND-1)
+ [ .-DTABHI-TGBLA=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DGBLA-1)
+ [ .-DTABHI-TGBLL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DGBLL-1)
+ [ .-DTABHI-TGBLS=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DGBLS-1)
+ [ .-DTABHI-TLCLA=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DLCLA-1)
+ [ .-DTABHI-TLCLL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DLCLL-1)
+ [ .-DTABHI-TLCLS=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DLCLS-1)
+ [ .-DTABHI-TSETA=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DSETA-1)
+ [ .-DTABHI-TSETL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DSETL-1)
+ [ .-DTABHI-TSETS=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DSETS-1)
+ [ .-DTABHI-TIF=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DIF-1)
+ [ .-DTABHI-TELSE=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DELSE-1)
+ [ .-DTABHI-TFI=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DFI-1)
+ [ .-DTABHI-TMNOTE=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DMNOTE-1)
+ [ .-DTABHI-THASH=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DHASH-1)
+ [ .-DTABHI-TSTAR=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DSTAR-1)
+ [ .-DTABHI-TEQUAL=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DEQUAL-1)
+ [ .-DTABHI-TPERC=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DPERC-1)
+ [ .-DTABHI-TAMP=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DAMP-1)
+ [ .-DTABHI-THAT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DHAT-1)
+ [ .-DTABHI-TSDRV=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DSDRV-1)
+ [ .-DTABHI-TODRV=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DODRV-1)
+ [ .-DTABHI-TASSERT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DASSERT-1)
+ [ .-DTABHI-TCPU=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DCPU-1)
+ [ .-DTABHI-TROUT=0
+ |
+ ! 0,"Dir table error"
+ ]
+ = /(DROUT-1)
+;
+; End of heap management routines file
+;
+ LNK MASM19

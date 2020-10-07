@@ -1,0 +1,416 @@
+ TTL Macro assembler - macro definition and expansion routines -> MASM17
+ OPT MASM17
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ======
+; HMACRO
+; ======
+;
+; Handle macro definition
+; Called on discovering the MACRO pseudo-opcode
+;
+; ENTRY:- LINEPTR points to current line
+;         Return address is NEWLINE, continue
+;
+; EXIT:-  No registers or flags preserved
+;
+HMAC10
+ BRK
+ = ASMERR
+ = "Mac def in expansion"
+HMAC20
+ BRK
+ = MACERR
+ = &80,"macro definition",0
+HMACRO
+ LDA PASS
+ BNE HMAC90 ;Branch if not first pass
+;
+; First check if in a macro (assembler error if so)
+;
+ LDA MDEPTH
+ BNE HMAC10 ;Branch if so
+;
+; Now get macro prototype statement
+;
+ JSR NEWLINE
+ JSR GETLINE ;Request prototype line
+ JSR MDEFAULT ;Set up default block
+HMAC60
+;
+; Now copy across macro text
+;
+ JSR NEWLINE
+ JSR GETLINE
+ SEC
+ ROR MACDEF ;Defining macros
+ JSR DIRFIND
+ BIT ERRSW
+ BMI HMAC20 ;Give up if error
+ PHY
+ PHP
+ JSR MACTEXT ;Copy out line
+ PLP
+ PLY
+ BCC HMAC60 ;Branch if no directive
+ LDA DIRNUM
+ CMPIM TMEND ;Look for MEND directive
+ BNE HMAC60 ;Branch if not found
+ JSR COMLINE ;Check all comment
+ BCC HMAC60 ;Branch if not
+ JSR SP0SKIP
+ BCC HMAC60 ;Ignore if not preceded by spaces
+ [ $TURBO
+ JMP EMAC ;End of macro definition
+ |
+ LDAIM ENEWMAC
+ JMP UOSW1 ;Send across tube and exit
+ ]
+HMAC90
+;
+; On pass 2 just skip to past MEND statement
+;
+ JSR SETCOL ;Allow 9 characters of code to be printed
+ JSR LISTING ;Produce listing if necessary
+ JSR GETLINE ;Request next line
+ SEC
+ ROR MACDEF ;Defining macros
+ JSR DIRFIND ;See if a directive
+ BCC HMAC90 ;Branch if not
+ LDA DIRNUM
+ CMPIM TMEND ;Look for MEND dir
+ BNE HMAC90 ;Loop if not end of definition
+ JSR COMLINE ;Check all comment
+ BCC HMAC90 ;Branch if not
+ JSR SP0SKIP
+ BCC HMAC90 ;Ignore if not preceded by spaces
+ JMP SETCOL ;Allow 9 characters of code to be printed
+;
+; =======
+; MACTEXT
+; =======
+;
+; Send a line of macro definition text across the tube
+;
+; ENTRY:- Line pointed to by LPTR
+;
+; EXIT:-  No registers or flags preserved
+;
+MACTEXT
+;
+; First check length of line
+;
+ LDYIM 0
+MACT10
+ LDAIY LPTR
+ CMPIM CR
+ BEQ MACT20 ;Branch if at end of line
+ INY
+ BPL MACT10 ;Branch if line not too long
+MACT20
+ JMP SNLINE ;Store new macro line
+;
+; ========
+; MDEFAULT
+; ========
+;
+; Produce the macro parameter default block, and parameter table
+;
+; ENTRY:- Line pointed to by LPTR
+;
+; EXIT:-  No registers or flags preserved
+;
+MDEFAULT
+;
+; First get macro name
+;
+ JSR SKIPSUB ;Past possible label portion
+ BCS MDEF10 ;Branch if error
+ JSR GETLAB ;Get the macro name
+ BVS MDEF10 ;Branch if bad
+ JSR SNMAC ;Request new macro
+;
+; Now handle the parameters
+;
+ LDYIM 2
+ STY LOCOFF ;Position in default block
+ DEY
+ STY ENDOFF ;Position in the parameter block
+ DEY ;Back to start of line
+ CLR DEFTAB+1 ;Assume no parameter zero
+ LDAIY LINEPTR
+ CMPIM "$" ;See if got a parameter zero
+ BNE MDEF20
+ ROR DEFTAB+1 ;Parameter zero exists
+ LDXIM 2
+ STX DEFTAB+2 ;Length of default pair
+ DEX ;X := 1
+ STX DEFTAB+3 ;Pointer to parameter name
+ LDXIM 4
+ STX LOCOFF ;Where next pair will be
+ INY ;Point to parameter name
+ JSR GETLAB ;Request parameter name
+ BVC MDEF15 ;Branch if o.k.
+MDEF10
+ JMP HMAC20 ;Complain
+MDEF15
+ JSR PARMCOPY
+ LDY CHARPTR ;Back to end of parameter name
+MDEF20
+ JSR SPSKIP ;Check termination and skip spaces
+ BCC MDEF10 ;Branch if terminator missing
+;
+; Now handle any further parameters after macro name
+;
+ JSR GETLAB ;Reread macro name
+ JSR SPSKIP
+ BCS MDEF25 ;Branch if termination ok
+ LDAIY LINEPTR ;Get terminating character
+ CMPIM ";"
+ BEQ MDEF25
+ CMPIM CR
+ BNE MDEF10 ;Branch if bad termination
+MDEF25
+ LDAIY LINEPTR
+ CMPIM "$" ;See if any parameters following macro name
+ BNE MDEF45 ;Branch to check rest of line if not
+MDEF30
+ LDAIM 2
+ STA LENPARM ;Default zero length + 2 bytes length and pointer
+ LDAIY LINEPTR
+ CMPIM "$" ;Looking for next parameter
+ BNE MDEF10 ;Branch if not found
+ INY ;Point to parameter name
+ JSR GETLAB ;Read it
+ BVS MDEF10 ;Branch if bad
+ LDY LOCOFF
+ LDA ENDOFF
+ STAAY DEFTAB+1 ;Pointer to parameter name
+ JSR PARMCOPY ;Put in parameter name
+ LDY CHARPTR
+ LDAIY LINEPTR
+ CMPIM EOT
+MDEF35
+ BEQ MDEF10 ;Chained branch
+ CMPIM ","
+ BEQ MDEF40
+ CMPIM SPACE
+ BEQ MDEF40
+ CMPIM CR
+ BEQ MDEF40
+ CMPIM ";"
+ BEQ MDEF40
+ CMPIM "="
+ BNE MDEF10 ;Error if not default setting
+ INY ;Past =
+ BMI MDEF10 ;Branch if overflowed line
+ JSR PARDEF ;Get default value, add to table, and point to terminator (C = 1)
+MDEF40
+ LDA LENPARM
+ LDX LOCOFF
+ STAAX DEFTAB
+ TXA
+ CLC
+ ADC LENPARM
+ BCS PCOP20 ;Branch if table overflow
+ STA LOCOFF
+ LDAIY LINEPTR
+ CMPIM ","
+ BEQ MDEF50 ;Branch if further parameters expected
+MDEF45
+ CMPIM EOT
+ BEQ MDEF35 ;Branch on error
+ CMPIM CR
+ BEQ MDEF60 ;Branch on end of line
+ CMPIM ";"
+ BEQ MDEF60 ;Branch on end of significant line
+ JSR SPSKIP ;Skip possible spaces
+ LDAIY LINEPTR
+ BCS MDEF45 ;Loop to check termination
+MDEF47
+ JMP MDEF10 ;Error if no spaces
+MDEF50
+ INY ;Past comma
+ BPL MDEF30 ;Loop for more parameters
+ BRA MDEF47 ;Else error
+MDEF60
+ LDX LOCOFF
+ CLRAX DEFTAB ;Mark end of table
+ INX
+ STX DEFTAB ;Length
+ BEQ PCOP20 ;Branch if too long
+ LDX ENDOFF
+ CLRAX PARMTAB ;End of all tables
+ INX
+ BEQ PCOP20 ;Branch if too long
+ STX ENDOFF ;Set length
+ JMP SDTAB ;Send off the default table and parameter table
+;
+; ========
+; PARMCOPY
+; ========
+;
+; Copy a parameter name in to the parameter block
+;
+; ENTRY:- Parameter name in SYMBOL
+;         ENDOFF points to where to put it
+;
+; EXIT:-  ENDOFF updated
+;         No registers or flags preserved
+;
+PARMCOPY
+ LDX ENDOFF
+ LDYIM &FA ;Incrementing counter
+PCOP10
+ LDAAY SYMBOL-&FA
+ STAAX PARMTAB ;Copy across
+ INX
+ INY
+ BNE PCOP10 ;Loop till all copied
+ INX
+ INX ;Gap for offset and length
+ STX ENDOFF
+ BPL PARD20 ;Branch if not wrapped round
+PCOP20
+ JSR MACPOVER
+ BRK
+ = MACOVR
+ = " table overflow",&00
+;
+; ======
+; PARDEF
+; ======
+;
+; Read a parameter default value into the default table
+;
+; ENTRY:- Y points to line
+;         C = 1
+;
+; EXIT:-  LENPARM = length of parameter+2
+;         Y points to terminator
+;         No other registers or flags preserved
+;
+PARDEF
+ LDA LOCOFF
+ ADCIM 2-1 ;Point to where to write default (note C was 1)
+ BCS PCOP20 ;Branch if table overflow
+ TAX
+ CLV ;Not in quoted string
+ LDAIY LINEPTR
+ CMPIM """" ;Check for opening quote
+ BNE PARD10 ;Branch if not
+ BIT FF ;String in quotes
+ INY
+ BMI PARD40 ;Branch if line too long
+PARD10
+ LDAIY LINEPTR ;Get character
+ STAAX DEFTAB ;Add to table
+ CMPIM CR
+ BEQ PARD60 ;Branch if end of string
+ CMPIM EOT
+ BEQ PARD40 ;Branch if end of text error
+ BVS PARD50 ;Branch if handling quoted string
+ CMPIM ","
+ BEQ PARD20 ;Branch if terminator
+ CMPIM ";"
+ BEQ PARD20 ;Branch if terminated
+ CMPIM """"
+ BNE PARD30 ;Branch if ordinary character
+ INY
+ BMI PARD40 ;Complain if line too long
+ LDAIY LINEPTR
+ CMPIM """" ;Look for rest of escape
+ BNE PARD40 ;Branch if bad
+PARD30
+ INC LENPARM
+ INX
+ BEQ PCOP20 ;Branch if table full
+ INY
+ BPL PARD10 ;Branch if line not too long
+PARD40
+ JMP HMAC20 ;Moan
+PARD50
+ CMPIM """" ;See if end of parameter or escape
+ BNE PARD30 ;Loop if not
+ INY
+ BMI PARD40 ;Branch if too long
+ LDAIY LINEPTR
+ CMPIM """"
+ BNE PARD20 ;Exit if not escape
+ BRA PARD30 ;Continue
+PARD60
+ BVS PARD40 ;Error if CR in quoted string
+PARD20
+ RTS ;Else exit
+;
+; ======
+; MACEXP
+; ======
+;
+; Handle a macro expansion request
+;
+; ENTRY:- name in SYMBOL
+;
+; EXIT:-  No registers or flags preserved
+;
+MACEXP
+ JSR GNMAC ;Ask for opcode to be macro expanded
+ BCS MACE40 ;Branch if not macro
+ LDXIM 5
+MACE05
+ LDAAX SYMBOL
+ STAAX MACNAME ;Save macro name
+ DEX
+ BPL MACE05
+ STX LCLFLAG ;Now allow LCL type directives
+ LDA MDEPTH
+ BEQ MACE20 ;Branch if not in a macro
+ CMPIM 8 ;See if too deeply nested
+ BCS MACE30 ;Branch if so
+;
+; Now stack parameter table
+;
+ LDYIM 0
+ CLR SYMPT
+ [ $TURBO
+ STY XSYMPT
+ ]
+ LDX PSTAPTR
+ STX SYMPT+1
+MACE10
+ LDAAY PARMTAB
+ STAIY SYMPT ;Copy across parameter block
+ INY
+ BNE MACE10 ;Loop till all copied
+ INC PSTAPTR ;Update parameter block pointer
+MACE20
+ JSR ONLYLIST ;Generate listing if required
+ JSR GDTAB ;Get default and parameter tables
+ JSR GPBLOCK ;Get real values of parameters
+ JSR ONMACRO ;Stack macro request
+ INC MDEPTH ;Macro depth has gone up
+ LDY HANDLE ;See if cross-referencing
+ BEQ MACE15 ;Branch if not
+ LDAIM MACDOWN ;Down into macro
+ JSR OSBPUT
+ JSR LNXREF
+MACE15
+ LDXIM 2
+ STX LNNUM
+ CLR LNNUM+1 ;Reset line number (1 for MACRO, 1 for prototype statement)
+ JMP DNMAC ;On to next line, telling local label table
+MACE30
+ BRK
+ = MDERR,"Macro nesting too deep",&00
+MACE40
+ LDYIM BADOPC
+ JMP ERROR
+;
+; End of macro definition and expansion routines file
+;
+ LNK MASM18

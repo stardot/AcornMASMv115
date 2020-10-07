@@ -1,0 +1,26 @@
+*|> AsmMasm
+*Masm
+w 78
+l 118
+asm NorHdr
+
+*spool Stable
+symbol n
+*spool
+get x.masm02
+03
+n&2000
+get x.masm05
+22
+p
+get x.masm44
+
+p
+save NewMasm
+&2000
+&2000+&3800
+&C000
+T
+&C000
+T
+*| The new 6502 Macro Assembler is NewMasm

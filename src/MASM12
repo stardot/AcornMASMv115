@@ -1,0 +1,538 @@
+        TTL > Masm12 - Macro assembler - symbol and character handling routines
+        OPT MASM12
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ======
+; GETVAR
+; ======
+;
+; Get a variable symbol
+;
+; ENTRY:- LINEPTR points to line
+;         Y is offset in line
+;
+; EXIT:-  Y points after symbol
+;         CHARPTR updated if good symbol
+;         Symbol in SYMBOL
+;         Qualifier is $
+;         V = 0 <=> good symbol
+;         X, A corrupt
+;
+GETVAR
+ LDAIM "$"
+ BRA GETS10 ;Branch always to common code
+;
+; =======
+; GETSMAN
+; =======
+;
+; Get a manifest symbol in qualifier SPACE
+;
+; ENTRY:- LINEPTR points to line
+;         Y is offset in line
+;
+; EXIT:-  Y points after symbol
+;         CHARPTR updated if good symbol
+;         Symbol in SYMBOL
+;         SPACE in QUAL
+;         V = 0 <=> good symbol
+;         X, A corrupt
+;
+GETSMAN
+ LDAIM SPACE
+GETS10
+ STA QUAL
+;
+; ======
+; GETLAB
+; ======
+;
+; Get a symbol
+;
+; ENTRY:- LINEPTR points to line
+;         Y is offset in line
+;
+; EXIT:-  Y points after symbol
+;         CHARPTR updated if good symbol
+;         Symbol in SYMBOL
+;         V = 0 <=> good symbol
+;         X, A corrupt
+;
+GETLAB ROUT
+ LDXIM -7 ;Incrementing count and pointer
+ LDAIY LINEPTR
+ ANDIM &FF-&20
+ CMPIM "A"
+ BCC #45GETLAB ;Branch if not alphabetic
+ CMPIM "Z"+1
+ BCS #45GETLAB ;Branch if not alphabetic
+ CLV ;Indicate good
+30GETLAB
+ INX ;See if room for character
+ BPL #40GETLAB ;Branch if not
+ STAAX SYMBOL+6 ;Store character
+40GETLAB
+ INY ;Next input
+ BMI #45GETLAB ;Branch if overflow
+10GETLAB
+ LDAIY LINEPTR
+        CMPIM   "_"       ; Tutu - ignore underlines in symbols
+        BEQ     #40GETLAB ; Tutu
+ CMPIM "0"
+ BCC #20GETLAB ;Branch if end of symbol
+ CMPIM "9"+1
+ BCC #30GETLAB ;Branch if digit
+ ANDIM &FF-&20
+ CMPIM "A"
+ BCC #20GETLAB ;Branch if end of symbol
+ CMPIM "Z"+1
+ BCC #30GETLAB ;Branch if valid alphabetic
+20GETLAB
+ LDAIM SPACE
+ INX ;Point to where first space would go
+ BPL #70GETLAB ;Branch if no more padding required
+60GETLAB
+ STAAX SYMBOL+6
+ INX
+ BNE #60GETLAB ;Loop till all padding done
+70GETLAB
+ STY CHARPTR
+ RTS
+45GETLAB
+ BIT FF ;Bad return if overflow or not found
+ RTS
+;
+; ======
+; DECNUM
+; ======
+;
+; Get a decimal number
+;
+; ENTRY:- Y points to line
+;
+; EXIT:-  C = 1 <=> o.k.
+;         Y points after number
+;         X preserved
+;         Result in TVVAL
+;
+DECNUM ROUT
+ PHX ;Preserve X
+ LDAIM &80
+ STA TEMPY ;Indicate no overflow
+ CLR TVVAL
+ CLR TVVAL+1 ;Zero value so far
+10DECNUM
+ JSR LNUMCHK ;See if digit
+ BCS #50DECNUM ;Branch if finished
+ ASL TVVAL
+ ROL TVVAL+1
+ PHA
+ BCS #30DECNUM
+ LDA TVVAL+1
+ PHA
+ LDA TVVAL
+ ASL TVVAL
+ ROL TVVAL+1
+ BCS #20DECNUM
+ ASL TVVAL
+ ROL TVVAL+1
+ BCS #20DECNUM
+ ADC TVVAL
+ STA TVVAL
+ PLA
+ ADC TVVAL+1
+ STA TVVAL+1
+ BCS #30DECNUM ;Branch if overflow
+40DECNUM
+ INY ;On to next character
+ PLA ;Digit back
+ ANDIM &F
+ CLC
+ ADC TVVAL
+ STA TVVAL
+ BCC #10DECNUM
+ INC TVVAL+1 ;Add in new digit
+ BNE #10DECNUM ;Loop if no overflow this time
+ CLR TEMPY
+ BRA #10DECNUM ;Branch always
+50DECNUM
+ ASL TEMPY ;Set carry on overflow status
+ PLX ;Restore X
+ RTS
+20DECNUM
+ PLA ;Stack straight
+30DECNUM
+ CLR TEMPY ;Set flag to indicate overflow
+ BRA #40DECNUM
+;
+; ======
+; HEXNUM
+; ======
+;
+; Get a hex number
+;
+; ENTRY:- Y points to line
+;
+; EXIT:-  C = 0 <=> o.k.
+;         Y points after number
+;         X preserved
+;         Result in TVVAL
+;
+HEXNUM ROUT
+ CLR TVVAL
+ CLR TVVAL+1 ;Clear out result
+ PHX ;Preserve X
+ LDXIM 4 ;At most four digits
+10HEXNUM
+ PHX
+ JSR LNUMCHK ;See if numeric
+ BCC #20HEXNUM ;Branch if so
+ ANDIM &FF-&20 ;Convert small to large
+ CMPIM "A"
+ BCC #40HEXNUM ;Branch if not letter
+ CMPIM "F"+1
+ BCS #40HEXNUM ;Branch if too big
+ SBCIM "A"-10-1 ;A->10,...,F->15 (C was 0)
+20HEXNUM
+ ANDIM &F ;Convert to digit
+ LDXIM 3
+30HEXNUM
+ ASL TVVAL
+ ROL TVVAL+1 ;Make room for new 4 bits
+ DEX
+ BPL #30HEXNUM ;Loop till done
+ TSB TVVAL ;Put in new 4 bits
+ PLX
+ INY ;Next character
+ DEX
+ BRA #10HEXNUM ;Loop for next digit
+40HEXNUM
+ PLA
+ CMPIM 3+1 ;C = 1 <=> overflow or no digits
+ PLX
+ RTS
+;
+; =======
+; LNUMCHK
+; =======
+;
+; Check if character is numeric
+;
+; ENTRY:- LINEPTR,Y points to character
+;
+; EXIT:-  A = character
+;         X, Y preserved
+;         C = 0 <=> numeric
+;         V preserved
+;
+LNUMCHK
+ LDAIY LINEPTR ;Get the character
+;
+; Fall through to NUMCHK
+;
+; ======
+; NUMCHK
+; ======
+;
+; Check if character is numeric
+;
+; ENTRY:- A = character
+;
+; EXIT:-  A, X, Y preserved
+;         C = 0 <=> numeric
+;         V preserved
+;
+NUMCHK
+ CMPIM "0"
+ BCC NUMC10 ;Branch if not numeric
+ CMPIM "9"+1
+ RTS
+NUMC10
+ SEC
+ RTS
+;
+; ======
+; ALPCHK
+; ======
+;
+; Check if character is alphabetic
+;
+; ENTRY:- A = character
+;
+; EXIT:-  X, Y preserved
+;         A case equated
+;         C = 0 <=> alphabetic
+;         V preserved
+;
+ALPCHK
+ ANDIM &FF-&20
+ CMPIM "A"
+ BCC NUMC10 ;Branch if not alphabetic
+ CMPIM "Z"+1
+ALPC10
+ RTS
+;
+; =======
+; SP0SKIP
+; =======
+;
+; Skip spaces from the start of the line
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+SP0SKIP
+ LDYIM 0
+;
+; Fall through to SPSKIP
+;
+; ======
+; SPSKIP
+; ======
+;
+; Skip across a sequence of spaces
+;
+; ENTRY:- LINEPTR points to line
+;         Y = offset
+;
+; EXIT:-  Y updated
+;         C = 1 <=> some spaces found
+;         X preserved
+;         A corrupt
+;
+SPSKIP ROUT
+ CLC ;Assume no spaces yet
+10SPSKIP
+ LDAIY LINEPTR
+ EORIM SPACE
+ BNE ALPC10 ;Branch at end of sequence
+ INY
+ SEC ;Indicate some spaces found
+ BRA #10SPSKIP ;Loop
+;
+; ========
+; ECOMLINE
+; ========
+;
+; Check for rest of line being comment
+; Complain if not
+;
+; ENTRY:- Y points to line
+;
+; EXIT:-  X preserved
+;         Y updated to next non-space if no error
+;         C = 1 <=> comment
+;         A, P corrupt
+;
+ECOMLINE
+ JSR COMLINE
+ BCS COMK10 ;Branch if ok
+ JMP EBADSYN ;Else moan
+;
+; ======
+; RDLCOM
+; ======
+;
+; Read a line and check if its all comment
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  C = 1 <=> all comment
+;         If C = 0, Y points to first non-comment character in line
+;
+RDLCOM
+ JSR READLINE
+ BRA COM0LINE
+;
+; ========
+; SCOMLINE
+; ========
+;
+; Check for line being comment
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X preserved
+;         Y updated to next non-space
+;         C = 1 <=> comment
+;         A = current character
+;         P corrupt
+;
+SCOMLINE
+ LDA IFDEPTH
+ ORA WDEPTH
+ BNE COM0LINE ;Don't look for * commands on conditioned out code
+ LDAI LINEPTR
+ CMPIM "*" ;Check for OSCLI request
+ BNE COM0LINE ;Branch if not
+ LDX LINEPTR
+ LDY LINEPTR+1
+ JSR OSCLI ;Do it
+ SEC
+ RTS ;Return, pretending it was a comment
+COM0LINE
+ LDYIM 0
+;
+; =======
+; COMLINE
+; =======
+;
+; Check for rest of line being comment
+;
+; ENTRY:- Y points to line
+;
+; EXIT:-  X preserved
+;         Y updated to next non-space
+;         C = 1 <=> comment
+;         A = current character
+;         P corrupt
+;
+COMLINE
+ JSR SPSKIP ;Skip leading spaces
+;
+; Fall through to COMCHK
+;
+; ======
+; COMCHK
+; ======
+;
+; Check for comment starting here
+;
+; ENTRY:- Y points to rest of line, assumed not space
+;
+; EXIT:-  X, Y preserved
+;         A = current character
+;         P corrupt
+;         C = 1 <=> all comment
+;
+COMCHK
+ LDAIY LINEPTR
+ CMPIM ";"
+ BEQ COMK10
+CRCHK
+ LDAIY LINEPTR
+ CMPIM CR
+ BEQ COMK10
+ CLC
+COMK10
+ RTS
+;
+; =======
+; UPPROGC
+; =======
+;
+; Increment PROGC for & or = operator
+;
+; ENTRY:- A = requested increment
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+UPPROGC ROUT
+ CLC
+ ADC PROGC
+ STA PROGC
+ BCC #10UPPROGC
+ INC PROGC+1
+10UPPROGC
+ RTS
+;
+; =====
+; INCPC
+; =====
+;
+; Increment PROGC for opcode
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  PROGC updated, NOCODE set
+;         Y preserved
+;         A, X, P corrupt
+;         MI set
+;
+INCPC ROUT
+ LDA OPCSTAT
+ TAX
+ LDAAX INCTAB ;Get number of bytes
+ CLC
+ ADC PROGC
+ STA PROGC
+ BCC #10INCPC
+ INC PROGC+1
+10INCPC
+ SEC
+ ROR NOCODE ;Code has now been produced
+ RTS
+INCTAB
+ = 3 ;ANYTWO
+ = 2 ;ANYONE
+ = 2 ;ZPONLY
+ = 2 ;ZPOPT
+ = 2 ;RELBR
+ = 1 ;NOOPND
+ [ $R6500
+ = 3 ;BBRTYPE
+ = 2 ;RMBTYPE
+ ]
+;
+; ======
+; DPSYMB
+; ======
+;
+; Handle ordinary label definition
+;
+; ENTRY:- symbol in SYMBOL
+;
+; EXIT:-  Symbol table updated
+;         C = 1 <=> error
+;         No registers or flags preserved
+;
+DPSYMB ROUT
+ JSR DGSYMB ;Enter into table
+;
+; Note Y=7 now
+;
+ BCC #10DPSYMB ;Branch if not already there
+ LDAIY SYMPT
+ ANDIM &60
+ CMPIM NODEF
+ BEQ #10DPSYMB ;Branch if undefined
+ LDA PASS ;See if pass 2
+ BNE #20DPSYMB
+ JSR EDDLAB ;Moan
+SCANTDEF
+;
+; Mark symbol undefinable
+;
+ LDYIM STATOFF
+ LDAIY SYMPT
+ ANDIM &FF-&60
+ ORAIM CANTDEF ;No longer definable
+ STAIY SYMPT
+ SEC
+ RTS
+10DPSYMB
+ LDAIY SYMPT
+ ANDIM &FF-&60
+ [ DEF=0
+ |
+ ORAIM DEF
+ ]
+ STAIY SYMPT ;Label now defined
+ INY
+ LDA PROGC
+ STAIY SYMPT
+ LDA PROGC+1
+ INY
+ STAIY SYMPT ;Value = PC
+20DPSYMB
+ CLC
+ RTS
+
+        LNK     MASM13  ; End of symbol and character handling routines file

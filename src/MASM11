@@ -1,0 +1,637 @@
+ TTL > Masm11 - Macro assembler - macro parameter and local variable routines
+ OPT MASM11
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; Layout of the macro parameter and local variable table
+; 256 bytes of store are allocated for these tables.
+; The macro parameter table comes first,
+; consisting of entry pairs of parameter name, length of value,
+; pointer to value.
+; A character zero indicates end of this table
+; The local variable definition table merely specifies which
+; local variables have been defined in the current macro.
+; Its entries are 6 byte quantities, a first byte of zero indicating
+; end of table.  Both the above tables are alphabetically sorted.
+; A pointer LOCOFF gives the offset of the start of the
+; local variables table from the start of the macro parameter table.
+; The values of the macro parameters are stored after the local variable table
+; There is a pointer ENDOFF pointing to the first free byte in the table
+;
+; Layout of the macro parameter default table
+; Byte 0 has bit 7 set <=> parameter zero exists
+; The rest of the table consists of entries of the following form:-
+; First byte - length of entry, zero => end of table
+; Second byte - pointer to name of parameter in PARMTAB
+; Remaining bytes - default value
+; Note parameter zero has no default
+;
+; =======
+; GETLINE
+; =======
+;
+; Get a possibly parameter substituted line
+;
+; ENTRY:- LPTR points to start of current source line if from file
+;         Line got from macro table if expanding a macro
+;
+; EXIT:-  LINEPTR points to new line
+;         Character string variables still required to be substituted
+;         No registers or flags preserved
+;
+
+GETLINE ROUT
+ CLR NONEW ;Getting new lines after listing
+ CLR INDFLAG ;Default not forcing identifiers
+ CLR ERRSW ;Indicate no error pending this line
+ CLR MACDEF ;Not defining a macro
+
+ LDXIM LNNUM
+ BIT &FF
+ BPL #10GETLINE
+ JMP READ10 ;Exit if escape
+
+10GETLINE
+ JSR INCDEC ;Increment the line number
+ JSR LNSTART ;Indicate start of line on listing
+ LDA MDEPTH
+ BEQ #30GETLINE ;Branch if not in a macro
+ JSR MGLINE ;Get next line from macro table
+ [ :LSB:MACLINE = 0
+ CLR LINEPTR
+ |
+ LDAIM MACLINE
+ STA LINEPTR
+ ]
+ LDAIM /MACLINE
+ STA LINEPTR+1 ;Point to input line
+ JSR SCHECK ;See if substitution needed
+ BCS #50GETLINE ;Branch if substitution needed
+
+20GETLINE
+ RTS
+
+30GETLINE
+ LDA LPTR
+ STA LINEPTR
+ LDA LPTR+1 ;Assume no substitution will occur
+ STA LINEPTR+1
+;
+; Now check line length. Lots of Tutu molestation
+;
+        LDYIM   0
+40GETLINE
+        LDAIY   LINEPTR         ; What's the char ?
+        CMPIM   &0A             ; Allow LF as line terminator too
+        BNE     #42GETLINE
+        LDAIM   CR              ; Force CR down its throat !
+        STAIY   LINEPTR
+42GETLINE
+        CMPIM   CR
+        BEQ     #20GETLINE      ; Branch if got terminator
+        CMPIM   &09             ; Force TABs to spaces
+        BNE     #45GETLINE
+        LDAIM   space
+        STAIY   LINEPTR
+45GETLINE
+
+        INY
+        BPL     #40GETLINE ; Branch if not too long
+        BRA     #65GETLINE ; Moan
+
+50GETLINE
+;
+; Note LINEPTR is now pointing to input line as well
+; Used by GETVAR
+;
+ CLR CHARPTR
+ CLR EXPTR
+
+55GETLINE
+ LDY CHARPTR
+ LDX EXPTR
+ LDAAY MACLINE ;Get next character
+ STAAX EXBUFF ;Save it
+ CMPIM CR
+ BEQ #95GETLINE ;Branch if end of line
+ CMPIM "$" ;See if start of parameter
+ BEQ #80GETLINE ;Branch if so
+
+60GETLINE
+ INC CHARPTR
+ BPL #70GETLINE ;Branch if input not too long
+
+65GETLINE
+ LDYIM 127
+ LDAIM CR
+ STAIY LINEPTR ;Put in a CR
+ JMP ELNOVER ;Moan
+
+70GETLINE
+ INC EXPTR
+ BPL #55GETLINE ;Loop if not overlong
+
+75GETLINE
+ JMP EEXOVER ;Moan
+
+80GETLINE
+ INC CHARPTR
+ BMI #65GETLINE ;Branch if too long
+ INY
+ LDAAY MACLINE ;Get character after $
+ CMPIM CR
+ BEQ #95GETLINE
+ CMPIM "$"
+ BEQ #60GETLINE ;Branch if simple substitution
+;
+; Now handle parameter substitution
+; First get symbol name
+;
+ STY TEMPY ;Save current position
+ JSR GETVAR ;Get parameter name
+ BVS #70GETLINE ;Branch if no symbol
+ JSR PARMVAL ;See if a macro parameter
+ BCS #85GETLINE ;Branch if so
+ LDY TEMPY
+ STY CHARPTR ;Point after $
+ BCC #70GETLINE ;Continue at next character
+
+85GETLINE
+ LDY MACPTR
+ LDXAY PARMTAB+6 ;X = offset of value
+ LDAAY PARMTAB+7 ;A = length of value
+ BEQ #55GETLINE ;Branch if null value
+ LDY EXPTR ;Where to write
+ STA LENPARM ;Save length
+
+90GETLINE
+ LDAAX PARMTAB ;Get a character for substitution
+ STAAY EXBUFF ;Copy across
+ INX
+ INY
+ BMI #75GETLINE ;Branch if line too long
+ DEC LENPARM
+ BNE #90GETLINE ;Loop till end of value
+ STY EXPTR ;New output pointer
+ LDX CHARPTR
+ LDAAX MACLINE
+ CMPIM "." ;See if dot to be ignored
+ BNE #55GETLINE
+ INC CHARPTR ;On to next character
+ BMI #65GETLINE ;Branch if line too long
+ BRA #55GETLINE ;Branch always
+
+95GETLINE
+ STAAX EXBUFF ;Save possible CR
+ LDAIM EXBUFF
+ STA LINEPTR
+ LDAIM /EXBUFF
+ STA LINEPTR+1 ;Point to input line
+ RTS
+;
+; =======
+; GPBLOCK
+; =======
+;
+; Get the macro parameter block
+;
+; ENTRY:- Default block in DEFTAB
+;         Macro call line pointed to by LINEPTR
+;
+; EXIT:-  No registers or flags preserved
+;
+
+GPBLOCK ROUT
+ LDYIM 2
+ STY DEFPTR ;pointer into defaults table
+ BIT DEFTAB+1 ;See if allowed a first parameter
+ BPL #20GPBLOCK ;Branch if not
+ LDYIM &FF
+
+10GPBLOCK
+ INY
+ LDAIY LINEPTR
+ CMPIM SPACE
+ BNE #10GPBLOCK ;Loop till end of parameter
+ LDAIM ","
+ STAIY LINEPTR ;Temporarily terminate parameter
+ PHY
+ JSR GETPARM ;Get length of parameter
+ LDY DEFTAB+3 ;Get pointer value block
+ JSR ENTPARM ;Put in value of parameter
+ PLY
+ LDAIM SPACE
+ STAIY LINEPTR ;Reinsert the space
+ LDYIM 4
+ STY DEFPTR ;Update pointer into defaults table
+
+20GPBLOCK
+;
+; Now point to parameter 1 in the macro call statement
+;
+ JSR SKIP ;Skip <LABEL> spaces
+ JSR SKIP ;Skip <NAME> spaces
+
+30GPBLOCK
+ LDY DEFPTR
+ LDAAY DEFTAB ;Get length of default sequence
+ BNE #40GPBLOCK ;Branch if not end of table
+ STAAX PARMTAB ;Put in end of table mark
+ LDX ENDOFF
+ STX LOCOFF ;Set up pointer to local variable area
+ RTS ;Else exit
+
+40GPBLOCK
+ JSR GETPARM ;Find length of parameter
+ LDA LENPARM
+ PHA ;Save length of parameter in line
+ DEY
+ BNE #50GPBLOCK ;Branch if not a default
+ LDAIY VALPTR
+ CMPIM "|" ;See if defaulting
+ BNE #50GPBLOCK ;Branch if not
+ LDY DEFPTR
+ INY
+ INY
+ STY VALPTR
+ LDAIM /DEFTAB
+ STA VALPTR+1 ;Get value from defaults table
+ ASSERT :LSB:DEFTAB=0
+ LDY DEFPTR
+ LDAAY DEFTAB
+ SBCIM 2 ;Note C was 1
+ STA LENPARM ;Length of default value
+
+50GPBLOCK
+ LDX DEFPTR
+ INX
+ LDYAX DEFTAB ;Get pointer to parameter block
+ JSR ENTPARM ;Put in parameter value
+ PLA ;Get back length of inline parameter
+ CLC
+ ADC LINEPTR
+ STA LINEPTR ;Update pointer to line
+ BCC #60GPBLOCK
+ INC LINEPTR+1
+
+60GPBLOCK
+ LDAI LINEPTR
+ CMPIM "," ;See if more parameters on line
+ BNE #70GPBLOCK ;Branch if not
+ INC LINEPTR
+ BNE #70GPBLOCK
+ INC LINEPTR+1
+
+70GPBLOCK
+ LDY DEFPTR
+ TYA
+ CLC
+ ADCAY DEFTAB
+ STA DEFPTR ;Point to next keyword default pair
+ BRA #30GPBLOCK ;And loop
+;
+; =======
+; ENTPARM
+; =======
+;
+; Enter a macro parameter in the macro parameter table, together
+; with its value.  The parameter is terminated by either carriage return
+; or ; or , not inside ".  Trailing spaces are significant.
+;
+; ENTRY:- Y points to macro parameter block for current parameter
+;         Value pointed to by VALPTR
+;         Length of parameter in LENPARM
+;
+; EXIT:-  No registers preserved
+;         C = 1
+;
+ENTPARM ROUT
+;
+; First find out if parameter will fit
+;
+ LDX ENDOFF
+ TXA
+ STAAY PARMTAB+6 ;Save offset pointer
+ CLC
+ ADC LENPARM ;New end of table
+ BCS #30ENTPARM ;Branch if too big
+ STA ENDOFF ;Save new end of table
+ LDA LENPARM
+ STAAY PARMTAB+7 ;Save length of parameter
+ LDYIM 0
+10ENTPARM
+ CPY LENPARM
+ BEQ #20ENTPARM ;Branch if finished copying in value
+ LDAIY VALPTR
+ STAAX PARMTAB
+ INX
+ INY
+ BRA #10ENTPARM ;Loop always
+20ENTPARM
+ RTS
+30ENTPARM
+ JSR MACPOVER
+TABOVER
+ BRK
+ = PAROVER
+ = " table full",&00
+MACPOVER
+ JSR MESSAGE
+ = "Macro paramete",!"r"
+ RTS
+;
+; ======
+; LVLOOK
+; ======
+;
+; Look up and enter a local name in the local variable table
+;
+; ENTRY:- Name in SYMBOL
+;         V = 1 <=> name to be entered
+;
+; EXIT:-  C = 1 <=> name was already there
+;
+LVLOOK ROUT
+ LDA MDEPTH
+ BEQ #90LVLOOK ;Branch if not in macro
+ LDYIM 1
+ PHP ;Save entry condition
+10LVLOOK
+ LDAAY PARMTAB ;Look for end of parameters
+ BEQ #20LVLOOK ;Branch if found
+ TYA
+ CLC
+ ADCIM 8 ;On to next symbol
+ TAY
+ BRA #10LVLOOK
+20LVLOOK
+ PLP
+ INY ;Point to start of local variables
+30LVLOOK
+ STY MACPTR ;Preserve
+ LDXIM -6 ;Incrementing counter
+ LDAAY PARMTAB
+ BEQ #60LVLOOK ;Branch if end of table
+40LVLOOK
+ LDAAY PARMTAB
+ CMPAX SYMBOL+6
+ BNE #50LVLOOK ;Branch if symbols differ
+ INY
+ INX
+ BNE #40LVLOOK ;Loop if not end of symbol
+ RTS ;Return matched (C = 1)
+50LVLOOK
+ BCS #60LVLOOK ;Branch if found correct place
+ PHP ;Save entry condition (V) and C = 0
+ LDA MACPTR ;Note C = 0
+ ADCIM 6 ;On to next
+ TAY ;New pointer in Y
+ PLP
+ BRA #30LVLOOK ;Branch always
+60LVLOOK
+ BVC #90LVLOOK ;Branch if no insert
+;
+; Insert new symbol
+;
+ LDA ENDOFF
+ TAY
+ CLC
+ ADCIM 6 ;Increment table length
+ BCS #95LVLOOK ;Branch if overflow
+ STA ENDOFF ;New end of table
+ TAX
+70LVLOOK
+ LDAAY PARMTAB
+ STAAX PARMTAB ;Shuffle up
+ CPY MACPTR ;See if finished
+ BEQ #80LVLOOK ;Branch if so
+ DEX
+ DEY
+ BRA #70LVLOOK
+80LVLOOK
+ LDXIM -6 ;Incrementing counter
+85LVLOOK
+ LDAAX SYMBOL+6
+ STAAY PARMTAB ;Write in symbol
+ INY
+ INX
+ BNE #85LVLOOK ;Loop till copied all
+;
+; Now update all pointers to macro parameters values
+;
+ LDYIM 1
+87LVLOOK
+ LDAAY PARMTAB
+ BEQ #90LVLOOK ;Branch if end of table
+ LDAAY PARMTAB+6
+ CLC
+ ADCIM 6
+ STAAY PARMTAB+6 ;Put in new offset
+ TYA
+ ADCIM 8
+ TAY
+ BRA #87LVLOOK
+90LVLOOK
+ CLC ;Name wasn't there
+ RTS
+95LVLOOK
+ JSR MESSAGE
+ = "Local variabl",!"e"
+ JMP TABOVER
+;
+; =======
+; PARMVAL
+; =======
+;
+; Get the value of a macro parameter
+;
+; ENTRY:- Parameter name in SYMBOL
+;
+; EXIT:-  C = 1 <=> parameter name found
+;         MACPTR is offset of parameter value information
+;
+PARMVAL ROUT
+ LDYIM 1 ;At start of table
+ CLC ;Indicate unknown parameter
+10PARMVAL
+ LDAAY PARMTAB ;Get first character of entry
+ BEQ #30PARMVAL ;Branch if end of table
+ STY MACPTR
+ LDXIM -6 ;Incrementing pointer
+20PARMVAL
+ LDAAY PARMTAB
+ CMPAX SYMBOL+6 ;Compare characters
+ BNE #40PARMVAL ;Branch if different
+ INY
+ INX
+ BNE #20PARMVAL ;Loop if not end of symbol
+30PARMVAL
+GETP30
+ RTS ;Note C = 1, so return good
+40PARMVAL
+ CLC
+ LDAIM 8
+ ADC MACPTR ;On to next entry
+ TAY
+ BRA #10PARMVAL
+;
+; =======
+; GETPARM
+; =======
+;
+; Find the length of the next parameter value
+;
+; ENTRY:- LINEPTR points to start of parameter value
+;
+; EXIT:-  Y = parameter length
+;         Also stored in LENPARM
+;         X preserved
+;         C = 1
+;         A, P corrupt
+;
+GETPARM ROUT
+ LDA LINEPTR
+ STA VALPTR
+ LDA LINEPTR+1
+ STA VALPTR+1
+ LDYIM &FF ;Start of parameter
+10GETPARM
+ CLV ;Indicate not in quoted string
+20GETPARM
+ INY
+ STY LENPARM
+ LDAIY VALPTR ;Get current character
+ CMPIM CR ;Check for end of line
+ BEQ GETP30
+ BVS #30GETPARM ;Branch if in quoted string
+ CMPIM "," ;See if end of parameter
+ BEQ GETP30
+ CMPIM ";" ;See if end of significant line
+ BEQ GETP30
+ CMPIM """" ;See if entering quoted string
+ BNE #20GETPARM
+ BIT FF ;Set inside quoted string
+ BRA #20GETPARM ;And loop
+30GETPARM
+ CMPIM """" ;See if leaving quoted string
+ BNE #20GETPARM
+ BRA #10GETPARM
+;
+; ======
+; SCHECK
+; ======
+;
+; See if line will require parameter substitution
+;
+; ENTRY:- LINEPTR points to line
+;
+; EXIT:-  C = 1 <=> substitution required
+;         X preserved
+;         No other registers preserved
+;
+SCHECK ROUT
+ LDYIM &FF
+10SCHECK
+ CLV ;Indicate not in quoted string
+20SCHECK
+ INY
+ LDAIY LINEPTR
+ CMPIM CR
+ BEQ #40SCHECK ;Branch if finished line
+ CMPIM "$" ;Check for possible parameter substitution
+ BEQ #50SCHECK ;Branch if so
+ BVS #30SCHECK ;Branch if in quoted string
+ CMPIM ";" ;See if end of significant line (note o.k. because no $ met)
+ BEQ #40SCHECK ;Branch if so
+ CMPIM """"
+ BNE #20SCHECK ;Branch if not entering quoted string
+ BIT FF ;Set V = 1
+ BRA #20SCHECK ;Branch always
+30SCHECK
+ CMPIM """"
+ BEQ #10SCHECK ;Branch if leaving quoted string
+ BRA #20SCHECK ;Else loop
+SKIP40
+40SCHECK
+ CLC ;Indicate o.k.
+50SCHECK
+ RTS
+;
+; ====
+; SKIP
+; ====
+;
+; Skip across a non-space sequence (possibly null), then a space sequence,
+; to point to the next non-space character
+;
+; ENTRY:- LINEPTR points to non-space sequence
+;
+; EXIT:-  LINEPTR updated
+;         X preserved
+;         A, Y, P corrupt
+;
+SKIP ROUT
+ JSR SKIPSUB
+ TYA
+ CLC
+ ADC LINEPTR
+ STA LINEPTR
+ BCC #10SKIP
+ INC LINEPTR+1
+10SKIP
+ RTS
+;
+; =======
+; SKIPSUB
+; =======
+;
+; Skip across a non-space sequence (possibly null), then a space sequence,
+; to point to the next non-space character
+;
+; ENTRY:- LINEPTR points to non-space sequence
+;
+; EXIT:-  X preserved
+;         C = 1 <=> line overflow
+;         A, P corrupt
+;         Y = offset of terminator
+;
+SKIPSUB ROUT
+ LDYIM &FF
+10SKIPSUB
+ CLV ;Indicate not in quoted string
+20SKIPSUB
+ INY
+ BMI #50SKIPSUB ;Branch if line too long
+ LDAIY LINEPTR
+ CMPIM CR
+ BEQ SKIP40 ;Branch if end of line
+ BVS #30SKIPSUB ;Branch if in quoted string
+ CMPIM ";"
+ BEQ SKIP40 ;Branch if reached comment
+ CMPIM SPACE
+ BEQ #40SKIPSUB ;Branch if reached end of name
+ CMPIM """"
+ BNE #20SKIPSUB ;Loop if not entering quoted string
+ BIT FF ;Set V
+ BRA #20SKIPSUB ;Loop
+30SKIPSUB
+ CMPIM """" ;Check for exit from quoted string
+ BNE #20SKIPSUB ;Branch if not
+ BRA #10SKIPSUB ;Branch if so
+40SKIPSUB
+ LDAIY LINEPTR
+ CMPIM SPACE
+ BNE SKIP40 ;Branch if passed spaces
+ INY
+ BPL #40SKIPSUB ;Branch if not too long
+50SKIPSUB
+ SEC ;Return bad
+ JMP ELNOVER ;Moan
+;
+; End of macro parameter and local variable routines file
+;
+ LNK MASM12

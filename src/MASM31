@@ -1,0 +1,126 @@
+ TTL Macro assembler - Macro utilities part 2 file -> MASM31
+ OPT MASM31
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; ====
+; LOOK
+; ====
+;
+; Look for a macro name in the macro name table
+;
+; ENTRY:- SYMBOL point to symbol
+;
+; EXIT:-  C = 0 <=> symbol found
+;         MACPTER points to symbol, or slot of least greater symbol
+;         (MACPTER),Y points to value
+;         No other registers preserved
+;
+LOOK
+ LDA MACNME
+ STA MACPTER
+ LDA MACNME+1
+ STA MACPTER+1
+ LDA XMACNME
+ STA XMACPTER ;Point to start of table
+LOOK10
+ CMP HIMEM+1
+ BCC LOOK20
+ LDA MACPTER+1
+ CMP HIMEM
+ BCS LOOK40 ;Return if empty table
+LOOK20
+ LDYIM  0
+LOOK30
+ LDAAY SYMBOL ;Get character from symbol
+ CMPIY MACPTER ;Look in table
+ BNE LOOK50 ;Branch if mismatch
+ INY
+ CPYIM  6
+ BCC LOOK30 ;Loop till end of symbol
+ CLC
+LOOK40
+ RTS
+LOOK50
+ BCC LOOK60 ;Branch if less than current symbol
+ LDA MACPTER
+ ADCIM  8 ;On to next symbol (note C was 1)
+ STA MACPTER
+ BCC LOOK20 ;Branch if no high byte overflow
+ INC MACPTER+1
+ BNE LOOK20 ;Branch if no extra high byte overflow
+ INC XMACPTER
+ LDA XMACPTER
+ BCS LOOK10 ;Branch always to check for end of table
+LOOK60
+ SEC
+ RTS ;Return not found
+;
+; =======
+; ONSTACK
+; =======
+;
+; Attempt to put macro or while information on the stack
+;
+; ENTRY:- A = type
+;
+; EXIT:-  All registers and flags preserved
+;         BRK if stack exhausted
+;
+ONSTACK
+ PHP
+ PHA
+ STA TEMP ;Save type
+ TXA
+ PHA
+ TYA
+ PHA
+ LDXIM CURLINE ;Assume WHILE stacking
+ LDA MSTPTR
+ TAY
+ CLC
+ ADCIM FRAME
+ BCS ONST20 ;Branch if run out of stack
+ STA MSTPTR
+ LDA TEMP ;Get type back
+ BPL ONST10 ;Branch if WHILE
+ LDXIM MACLNE
+ONST10
+ STAAY MSTACK+5
+ LDAAX  0
+ STAAY MSTACK
+ LDAAX  1
+ STAAY MSTACK+1
+ LDAAX TXPAGE
+ STAAY MSTACK+2 ;Save pointer to current line
+ LDAAX  2
+ STAAY MSTACK+3
+ LDAAX  3
+ STAAY MSTACK+4 ;Save length remaining
+ PLA
+ TAY
+ PLA
+ TAX
+ PLA
+ PLP
+ RTS
+ONST20
+ BRK
+ = WHOVER,"Macro stack overflow",&00
+;
+; Check not overflowing
+;
+FINISH
+ [ . > &F800
+ ! 0,"Code too large"
+ ]
+;
+; End of utilities part 2 file
+;
+; End of the code
+;
+ END

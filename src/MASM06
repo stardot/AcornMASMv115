@@ -1,0 +1,492 @@
+ TTL Macro assembler - symbol table printing routines - > MASM06
+ OPT MASM06
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+TITLES
+  = "Symbol table - "
+STITLEN * .-TITLES
+TITLEA
+ = "alphabetic",CR
+ATITLEN * .-TITLEA
+TITLEN
+ = "numeric",CR
+NTITLEN * .-TITLEN
+ATITSTART * ATITLEN+STITLEN
+NTITSTART * NTITLEN+STITLEN
+;
+; ======
+; STABLE
+; ======
+;
+; Handle symbol table request
+;
+; ENTRY:- Y points to rest of command line
+;
+; EXIT:-  No registers or flags preserved
+;
+STABLE ROUT
+ PHY ;Save old value
+ INY
+ JSR EOLCHK ;Check syntax
+ PLY
+ LDAIY LINEPTR
+ JSR ALPCHK ;Convert to upper case letter
+ BCS STAB10 ;Branch if bad letter
+ CMPIM "A"
+ BEQ SYMBA
+ CMPIM "N"
+ BEQ SYMBN
+ CMPIM "S"
+ BEQ #05STABLE
+STAB10
+ JMP BADOPT
+;
+; Print out value,if applicable,of manifest symbol
+; Just for HUGO
+;
+05STABLE
+ JSR MESSAGE
+ = "Symbol :",!SPACE
+ JSR READLINE
+ LDAI LINEPTR
+ CMPIM CR ;See if empty line
+ BEQ #25STABLE
+ JSR GETSMAN
+ BVS #10STABLE ;Branch if symbol bad
+ JSR EOLCHK
+ JSR HASH
+ JSR LOOKUP
+ BCC #30STABLE ;Branch if symbol not there
+ JSR MESSAGE
+ = "Value is",!SPACE
+ LDYIM DATAOFF+1
+ LDAIY SYMPT ;High byte
+ JSR HEXNSUP
+ DEY
+ LDAIY SYMPT ;Low byte
+ JSR HEXNSUP
+ JSR NEWLPRINT
+ BRA #05STABLE ;Loop
+10STABLE
+ JSR EBADLAB
+20STABLE
+ JSR MESSAGE
+ = !CR
+25STABLE
+ RTS
+30STABLE
+ JSR EUNDSYMB ;Else complain
+ BRA #20STABLE
+;
+; =====
+; SYMBA
+; =====
+;
+; Do an alphabetic sort, and print the results
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+SYMBA
+ LDYIM ATITLEN-1
+ LDXIM ATITSTART-1
+SYMBA1
+ LDAAY TITLEA
+ STAAX TITLE
+ DEX
+ DEY
+ BPL SYMBA1
+ STY SORTTYPE ;Request alphabetic sort
+ BRA SYMB10 ;Common code with numeric sort
+;
+; =====
+; SYMBN
+; =====
+;
+; Do a numeric sort, and print the results
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+SYMBN ROUT
+ LDYIM NTITLEN-1
+ LDXIM NTITSTART-1
+10SYMBN
+ LDAAY TITLEN
+ STAAX TITLE
+ DEX
+ DEY
+ BPL #10SYMBN
+ CLR SORTTYPE ;Request numeric sort
+SYMB10
+ LDXIM STITLEN-1
+20SYMBN
+ LDAAX TITLES
+ STAAX TITLE
+ DEX
+ BPL #20SYMBN
+ JSR SORT ;Sort the symbols
+;
+; Now print the table
+; Note C = 1
+;
+ ROR PAGEBYTE ;Allow titles etc
+ JSR ZPAGE ;Set page number
+ JSR NEXTPAGE ;Start on a new page
+ LDAIM &80
+ STA I+1
+ ASLA
+ STA I ;Start of table
+30SYMBN
+ JSR PSYMB ;Print symbol
+ LDAIM CR
+ LDX WIDTH
+ CPXIM 13
+ PHP ;Save C
+ BCC #40SYMBN ;Branch if end of line reached
+ LDAIM SPACE
+40SYMBN
+ JSR CHARPRINT
+ PLP ;Retrieve C
+ LDA N
+ BNE #50SYMBN
+ DEC N+1
+50SYMBN
+ INC I
+ INC I
+ BNE #60SYMBN
+ INC I+1 ;On to next symbol
+60SYMBN
+ DEA
+ STA N ;One less symbol to print
+ ORA N+1
+ BNE #30SYMBN ;Loop if more to go
+ BCC #70SYMBN ;Branch if already output CR
+ JSR NEWLPRINT
+70SYMBN
+ LDA NDEC+1
+ JSR HEXPRINT
+ LDA NDEC
+ JSR HEXP ;Print number of symbols in table
+ JSR MESSAGE
+ = " symbols in table",!CR
+ RTS
+;
+; ====
+; SORT
+; ====
+;
+; Sort the symbol table as specified in SORTTYPE
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;         C = 1
+;
+SORT ROUT
+ JSR SETUP ;Generate the pointers
+ LDA N
+ STA M
+ LDA N+1
+ STA M+1
+ ORA M
+ BNE #10SORT ;Branch if got some symbols
+ BRK
+ = &FF
+ = "No symbols",&00
+10SORT
+;
+; M := (M+2)/3
+;
+ CLC
+ LDA M
+ ADCIM 2
+ STA M
+ STA OPRND1
+ BCC #20SORT
+ INC M+1
+20SORT
+ LDA M+1
+ STA OPRND1+1
+ CLR OPRND2+1
+ LDAIM 3
+ STA OPRND2
+ JSR DIVIDE
+ LDX OPRND1
+ STX M
+ STX I
+ LDX OPRND1+1
+ STX M+1
+ STX I+1 ;I:=M
+;
+; Start of outer loop
+;
+30SORT
+ INC I
+ BNE #40SORT
+ INC I+1
+40SORT
+ LDA N
+ CMP I
+ LDA N+1
+ SBC I+1
+ BCC #70SORT ;Exit if I > N
+ LDA I
+ SBCIM 1
+ STA J
+ LDA I+1
+ SBCIM 0
+ STA J+1 ;J := I-1
+50SORT
+ SEC
+ LDA J
+ SBC M
+ STA JMINM
+ LDA J+1
+ SBC M+1
+ STA JMINM+1 ;JMINM := J-M
+ BCC #30SORT ;Loop till J<M
+ JSR COMPARE
+ BCS #30SORT ;Leave inner loop if in correct order
+;
+; Now swap symbols
+;
+ LDYIM 1
+60SORT
+ LDAIY TWOJM
+ PHA
+ LDAIY TWOJ
+ STAIY TWOJM
+ PLA
+ STAIY TWOJ
+ DEY
+ BPL #60SORT
+;
+; Now J -:= M
+;
+ LDA JMINM
+ STA J
+ LDA JMINM+1
+ STA J+1
+ BRA #50SORT ;Always branch
+70SORT
+ LDA M
+ LSRA
+ ORA M+1
+ BNE #10SORT ;Loop till M =1
+ RTS
+;
+; =====
+; PSYMB
+; =====
+;
+; Print the given symbol
+;
+; ENTRY:- Symbol referenced by I
+;
+; EXIT:-  X preserved
+;         A, Y, P corrupt
+;
+PSYMB ROUT
+ LDAI I
+ STA SYMPT
+ LDYIM 1
+ LDAIY I
+ STA SYMPT+1 ;Pointer to symbol
+ LDYIM STATOFF
+ LDAIY SYMPT ;Get status byte
+ LSRA ;See if used
+ LDAIM SPACE ;Space if so
+ BCS #05PSYMB
+ LDAIM "*"
+05PSYMB
+ JSR CHARPRINT
+ LDYIM 1 ;Don't use qualifier
+10PSYMB
+ LDAIY SYMPT
+ JSR CHARPRINT
+ INY
+ CPYIM STATOFF
+ BCC #10PSYMB ;Loop till symbol printed
+ JSR PSPACE
+ LDAIY SYMPT ;Get status byte
+ ANDIM &60
+ [ DEF=0
+ |
+ CMPIM DEF
+ ]
+ BNE #20PSYMB ;Branch if incorrectly defined
+ INY ;Past status byte
+ INY ;High byte first
+ LDAIY SYMPT
+ JSR HEXNSUP
+ DEY
+ LDAIY SYMPT
+;
+; Fall through to HEXNSUP
+;
+; =======
+; HEXNSUP
+; =======
+;
+; Print a byte without zero suppressing
+;
+; ENTRY:- A = byte
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+HEXNSUP
+ CLV
+ JMP HEXP
+20PSYMB
+ JSR MESSAGE
+ = "XXX",!"X"
+ RTS
+;
+; =======
+; COMPARE
+; =======
+;
+; Compare two symbols, either alphabetically or numerically
+;
+; ENTRY:- J specifies first symbol
+;         JMINM specifies second symbol
+;         SORTTYPE < 0 <=> alphabetic comparison
+;
+; EXIT:-  Carry set <=> first symbol >= second symbol
+;         TWOJ points to first symbol
+;         TWOJM points to second symbol
+;         A, Y corrupt
+;         X preserved
+;
+COMPARE ROUT
+ LDA J
+ ASLA
+ STA TWOJ
+ LDA J+1
+ ROLA
+ ORAIM &80 ;Offset into table of pointers
+ STA TWOJ+1
+ LDA JMINM
+ ASLA
+ STA TWOJM
+ LDA JMINM+1
+ ROLA
+ ORAIM &80 ;Offset into table of pointers
+ STA TWOJM+1
+;
+; Now dereference J and JMINM
+;
+ [ $TURBO
+ LDYIM /SYMSHI
+ ASSERT :MSB:SYMSHI=1
+ STY XSYMB1 ;Point SYMB to GLOBAL TABLE
+ STY XSYMB2
+ |
+ LDYIM 1
+ ]
+ LDAIY TWOJ
+ STA SYMB1+1
+ LDAIY TWOJM
+ STA SYMB2+1
+ LDAI TWOJ
+ STA SYMB1
+ LDAI TWOJM
+ STA SYMB2
+ BIT SORTTYPE ;See how to compare
+ BMI #20COMPARE ;Branch if alphabetic
+ LDYIM DATAOFF+1 ;Point to MSB
+ LDAIY SYMB1
+ CMPIY SYMB2
+ BNE #10COMPARE ;Exit if different
+ DEY
+ LDAIY SYMB1
+ CMPIY SYMB2
+10COMPARE
+ [ $TURBO
+ CLR XSYMB1 ;Reset SYMBn
+ CLR XSYMB2
+ ]
+ RTS
+20COMPARE
+ DEY ;Y := 0
+30COMPARE
+ LDAIY SYMB1
+ CMPIY SYMB2
+ BNE #10COMPARE ;Branch if different
+ INY
+ CPYIM STATOFF
+ BCC #30COMPARE ;Loop if more to compare
+ [ $TURBO
+ BRA #10COMPARE ;Else exit
+ |
+ RTS
+ ]
+;
+; =====
+; SETUP
+; =====
+;
+; Set up the pointers to the symbols to be sorted
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  N = number of symbols to be sorted
+;         All registers and flags corrupt
+;
+SETUP ROUT
+ LDAIM &80
+ STA I+1 ;Where to put pointers
+ CLR M
+ CLR I
+ CLR NDEC
+ CLR NDEC+1
+ CLR N
+ CLR N+1 ;Zero count of symbols
+ [ $TURBO
+ LDAIM /SYMSHI
+ STA XM
+ ]
+ LDAIM SYMSHI
+ STA M+1 ;Point to table
+10SETUP
+ LDAI M
+ CMPIM SPACE
+ BNE #30SETUP ;Branch if unused not needed
+ INC N
+ BNE #20SETUP
+ INC N+1 ;Increment symbols count
+20SETUP
+ LDXIM NDEC
+ JSR INCDEC ;Increment decimal count
+ LDA M
+ STAI I
+ INC I
+ LDA M+1
+ STAI I
+ INC I
+ BNE #30SETUP
+ INC I+1
+30SETUP
+ CLC
+ LDA M
+ ADCIM ENTOFF ;On to next entry
+ STA M
+ BCC #10SETUP
+ INC M+1
+ LDA M+1
+ CMPIM SYMEHI
+ BCC #10SETUP ;Loop if not at end of table
+ RTS
+;
+; End of symbol table printing routines file
+;
+ LNK MASM07

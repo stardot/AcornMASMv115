@@ -1,0 +1,655 @@
+        TTL     > Masm05 - Macro assembler - listing routines
+        OPT     MASM05
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+
+
+; =======
+; LISTING
+; =======
+;
+; Generate a listing under suitable circumstances
+; and go on to next line
+;
+; ENTRY:- LINEPTR points to line
+;
+; EXIT:-  LPTR updated if not in a macro
+;         LISTREQ copied into LISTFLAG
+;         No registers or flags preserved
+;
+
+LISTING
+ BIT NONEW
+ BMI NEWL30 ;Branch if no new line required
+ JSR ONLYLIST
+
+
+; =======
+; NEWLINE
+; =======
+;
+; Advance LPTR to a new line if not macro-expanding
+;
+; ENTRY:- LPTR points to current line if not expanding
+;
+; EXIT:-  LPTR, LINEPTR points to next line
+;         No registers or flags preserved
+;
+
+NEWLINE ROUT
+
+ LDA MDEPTH
+ BNE #30NEWLINE ;Ignore if macro expanding
+
+ TAY ;Y := 0
+10NEWLINE
+ LDAIY LPTR ;Get current character
+ CMPIM CR
+ BEQ #20NEWLINE ;Branch if at end of line
+ CMPIM EOT
+ BEQ #40NEWLINE ;Branch if end of text (error)
+ INY
+ BNE #10NEWLINE ;Loop if not overflowed
+ INC LPTR ;Next block
+ BRA #10NEWLINE ;Branch always
+
+20NEWLINE
+ SEC
+ TYA
+ ADC LPTR
+ STA LPTR
+ BCC #30NEWLINE
+ INC LPTR+1
+30NEWLINE
+NEWL30
+ RTS
+
+40NEWLINE
+ BRK
+ = EOTERR
+ = "END missing",0
+
+
+; ========
+; ONLYLIST
+; ========
+;
+; Generate a listing under suitable circumstances
+;
+; ENTRY:- LINEPTR points to line
+;
+; EXIT:-  LISTREQ copied into LISTFLAG
+;         No registers or flags preserved
+;
+
+ONLYLIST ROUT
+
+ BIT ERRSW
+ BMI #10ONLYLIST ;List if error
+
+ LDA PASS
+ BEQ #60ONLYLIST ;No listing if on pass 1
+
+ BIT LISTFLAG
+ BPL #50ONLYLIST ;Branch if not listing
+
+10ONLYLIST
+ LDA PASS
+ BEQ #15ONLYLIST ;Branch if pass 1 listing
+
+ BIT LISTFLAG
+ BPL #15ONLYLIST ;Branch if not listing
+
+20ONLYLIST
+ JSR SPCPAD ;Pad out the code area
+ BRA #30ONLYLIST
+
+15ONLYLIST
+ JSR LNSTART ;Give the line number and code address
+
+30ONLYLIST
+ JSR LISTLINE
+ LDA ERRSW
+ AND STOP ;See if stopping on error
+ BPL #50ONLYLIST ;Branch if not
+
+STOPPOLL
+ CLR STOP ;Unset stop on error
+40ONLYLIST
+ BIT &FF ;Poll for escape
+ BPL #40ONLYLIST ;Loop till found
+ JMP READ10 ;Acknowledge escape and BRK
+
+50ONLYLIST
+ LDA LISTREQ
+ STA LISTFLAG ;Update LISTFLAG
+60ONLYLIST
+ RTS
+
+
+; ========
+; LISTLINE
+; ========
+;
+; List the current source line
+;
+; ENTRY:- LINEPTR points to line
+;
+; EXIT:-  No registers or flags preserved
+;
+
+LISTLINE ROUT
+ LDYIM 0 ;At start of line
+ JSR COMCHK ;See if all comment
+ BCS #60LISTLINE ;Branch if so
+
+ LDXIM  8       ; Tutu - was 7 (Maximum field length)
+ JSR    FIELD   ; Print first field (label)
+ JSR    SPSKIP  ; Skip terminating spaces
+
+ LDXIM  6       ; Tutu - was 5 (makes MACROs nicer)
+ JSR    FIELD   ; Print next field (opcode)
+
+ JSR    COMLINE
+ LDXIM  7 ;Operand width
+ BCS    #50LISTLINE ;Branch if all comment now
+
+ CLV
+10LISTLINE
+ LDAIY LINEPTR
+ CMPIM """" ;See if entering/leaving quoted strng
+ BNE #30LISTLINE ;Branch if not
+ BVS #20LISTLINE
+ BIT FF
+ BRA #30LISTLINE
+20LISTLINE
+ CLV
+30LISTLINE
+ PHP ;Save V
+ JSR CHARPRINT ;Print the character
+ PLP
+ DEX
+ INY ;On to next
+ BVS #40LISTLINE ;Branch if in quoted string
+ PHY ;Save current position
+ JSR COMLINE
+ PLA
+ BCS #50LISTLINE ;Branch if at comment
+ TAY
+ BCC #10LISTLINE ;Branch always
+40LISTLINE
+ LDAIY LINEPTR
+ CMPIM CR ;Check for EOL inside quoted string
+ BNE #10LISTLINE ;Branch if not
+
+50LISTLINE
+ JSR PSPACE ;Pad with a space
+ DEX
+ BPL #50LISTLINE ;Pad out operand field
+
+; Now print comment field
+
+60LISTLINE
+ LDAIY  LINEPTR
+ CMPIM  CR
+ PHP
+ JSR    CHARPRINT
+ INY
+ PLP
+ BNE    #60LISTLINE ;Loop till end of line
+
+LIST10
+ RTS
+
+
+; =======
+; LNSTART
+; =======
+;
+; Print relevant information at start of line
+;
+; ENTRY:- No conmditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;         V = 0
+;
+
+LNSTART ROUT
+ BIT ERRSW
+ BMI #10LNSTART ;Branch if error pending
+ LDA PASS
+ BEQ LIST10 ;Exit if on pass one
+ LDA LISTFLAG
+ BPL LIST10 ;Exit if listing not required
+10LNSTART
+ JSR NLNPRINT ;First give line number
+ LDA PROGC+1
+ JSR HEXNSUP
+ LDA PROGC
+
+; Fall through to HEXSPACE, returning with V = 0
+
+
+; ========
+; HEXSPACE
+; ========
+;
+; Print a hex byte followed by SPACE
+;
+; ENTRY:- A = byte
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+
+HEXSPACE
+ JSR HEXNSUP ;Print without suppressing
+
+; Fall through to PSPACE
+
+
+; ======
+; PSPACE
+; ======
+;
+; Print a space
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+
+PSPACE
+ DEC COLUMN
+ LDAIM SPACE
+ BRA CHARPRINT
+
+
+; ========
+; NLNPRINT
+; ========
+;
+; Print a line number without zero suppression
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+NLNPRINT
+ CLV
+ JSR LNPRI10
+ BRA PSPACE ;Branch always to print terminating space
+
+
+; ======
+; WRNEWL
+; ======
+;
+; Write out the character, and a newline
+;
+; ENTRY:- A = character
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+WRNEWL
+ JSR CHARPRINT ;Output the character
+
+; Fall through to NEWLPRINT
+
+
+; =========
+; NEWLPRINT
+; =========
+;
+; Print a newline
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P Corrupt
+;         X, Y preserved
+;
+
+NEWLPRINT
+ LDAIM CR
+
+; Fall through to CHARPRINT
+
+
+; =========
+; CHARPRINT
+; =========
+;
+; Print a character to the printer
+;
+; ENTRY:- A = character
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;         WIDTH, LENGTH, PGNUM updated
+;
+
+CHARPRINT ROUT
+
+        PHA
+        BIT     PAGEBYTE        ; See if paging
+        BPL     #20CHARPRINT    ; Branch if not
+
+        LDA     LENGTH          ; See if at start of page
+        BNE     #20CHARPRINT    ; Branch if not
+
+        PHX
+
+        JSR     OMESS
+        = 1,CR, 1,CR, CR,"Acorn macro assembler    Page", !SPACE ; Tutu
+
+        LDXIM   PGNUM
+        JSR     INCDEC  ; New page number
+        JSR     PTPGNUM ; Print the page number zero suppressed
+
+        LDAIM   CR      ; Newline after page number
+
+        LDXIM   &FF
+10CHARPRINT
+        JSR     OSASCI
+        INX
+        LDAAX   TITLE
+        CMPIM   CR
+        BNE     #10CHARPRINT
+
+        JSR     OSNEWL  ; Add a carriage return or two
+        JSR     OSNEWL
+
+        LDAIM   6
+        STA     LENGTH  ; Current page length
+
+        PLX
+
+20CHARPRINT
+        PLA             ; Character to be printed
+        CMPIM   CR
+        BEQ     #50CHARPRINT
+        INC     WIDTH
+        DEC     WIDTH   ; Set flag on WIDTH expired
+        BEQ     #40CHARPRINT ; Don't print if off end
+        DEC     WIDTH
+        JMP     OSASCI
+
+50CHARPRINT
+ JSR OSNEWL
+ JSR NEXT10 ;No characters on next line
+ BIT PAGEBYTE
+ BPL #40CHARPRINT ;No title if not paging
+ INC LENGTH
+ LDA LENGTH
+ CMP MLENGTH ;See if off end of page
+ BCC #40CHARPRINT ;Branch if not
+
+; Fall through to NEXTPAGE
+
+
+; ========
+; NEXTPAGE
+; ========
+;
+; Go on to next page
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;         WIDTH, LENGTH updated
+;
+
+NEXTPAGE
+        JSR     OMESS   ; Form feed
+        = 1, !FORMFEED  ; Tutu - send to printer only
+
+        CLR     LENGTH ;No lines on new page
+
+NEXT10  LDA     MWIDTH
+        STA     WIDTH
+40CHARPRINT
+        RTS
+
+
+; =========
+; OUTOPCODE
+; =========
+;
+; Output the code for an opcode plus operands
+;
+; ENTRY:- Opcode in OPCVAL
+;         Type in OPCTYPE
+;         Operands in OPRND1, OPRND2, TVVAL
+;
+; EXIT:-  No registers or flags preserved
+;
+
+OUTOPCODE ROUT
+
+ LDA OPCVAL
+ CMPIM &6C ;See if JMI
+ BNE #05OUTOPCODE ;Branch if not
+ BIT CPU
+ BMI #05OUTOPCODE ;Branch if CMOS CPU
+ LDX TVVAL
+ INX
+ BNE #05OUTOPCODE ;Branch if not page boundary
+ LDYIM BADJMI
+ BNE #63OUTOPCODE ;Moan
+
+05OUTOPCODE
+ LDY OPCSTAT
+ PHY
+ LDA OPCVAL
+ TAX
+ CPYIM ZPOPT
+ BEQ #40OUTOPCODE ;Branch if zero page option
+ [ $R6500
+ CPYIM BBRTYPE
+ BCC #20OUTOPCODE ;Branch if not bit type
+ LDA OPRND1
+ ANDIM &7 ;Only bottom three bits relevant
+ ASLA
+ ASLA
+ ASLA
+ ASLA ;*16
+ |
+ BRA #20OUTOPCODE ;Branch always
+ ]
+
+10OUTOPCODE
+ EOR OPCVAL
+20OUTOPCODE
+ JSR CODEOUT ;Output the instruction
+ PLY ;Get status back
+ STY OPCSTAT ;Save modified status
+ BEQ #65OUTOPCODE ;Branch if two byte standard
+ DEY
+ BEQ #30OUTOPCODE ;Branch if one byte operand
+ DEY
+ BEQ #60OUTOPCODE ;Branch if zero page only
+ DEY
+ DEY ;No ZP option now (its been converted)
+ BEQ #75OUTOPCODE ;Branch if relative branch
+ DEY
+ BNE #70OUTOPCODE ;Branch if not no operand
+ RTS ;Else finished
+
+30OUTOPCODE
+ LDA TVVAL
+ BRA CODEOUT
+
+; Handle zero page option on opcode
+
+40OUTOPCODE
+ PLA
+ LDAIM ANYTWO ;Assume will not be ZP form
+ PHA
+ TXA
+ LDY TVVAL+1
+ BNE #20OUTOPCODE ;Branch if definitely two byte
+ BIT FORCED
+ BMI #20OUTOPCODE ;Branch if forced two byte
+ PLA
+ LDAIM ANYONE ;Else ZP form
+ PHA
+ CPXIM &9C ;See if STZ
+ BEQ #50OUTOPCODE
+ CPXIM &9E ;See if STZAX
+ BEQ #55OUTOPCODE
+ LDAIM &8 ;Invert this bit for ZP
+ BRA #10OUTOPCODE
+
+50OUTOPCODE
+ LDAIM &64 ;STZZ
+ BRA #20OUTOPCODE
+
+55OUTOPCODE
+ LDAIM &74 ;STZZX
+ BRA #20OUTOPCODE
+
+; Handle zero page only opcode - Value in OPRND1
+
+60OUTOPCODE
+ LDA OPRND1+1
+ BEQ #95OUTOPCODE ;Branch if ok
+ LDYIM BADZP
+63OUTOPCODE
+ JMP ERROR ;Moan
+
+65OUTOPCODE
+OUT110
+ JSR #30OUTOPCODE ;Put out low byte
+ LDA TVVAL+1
+ BRA CODEOUT ;Then high byte
+70OUTOPCODE
+ LDA OPRND2
+ STA OPRND1
+ LDA OPRND2+1
+ STA OPRND1+1 ;Ensure correct byte used for output
+ DEY
+ BNE #60OUTOPCODE ;Handle RMBTYPE as ZPONLY
+ JSR #60OUTOPCODE ;Do ZP part of BBR
+75OUTOPCODE
+
+; Handle relative branch/BBR
+
+ CLC
+ LDAIM 2 ;Assume relative branch
+ LDX OPCSTAT
+ [ $R6500
+ BPL #80OUTOPCODE ;Branch if so
+ SEC ;Else one more byte for BBR
+80OUTOPCODE
+ ]
+ ADC PROGC
+ STA OPRND2
+ LDA PROGC+1
+ ADCIM 0
+ STA OPRND2+1 ;Find instruction end
+ LDA TVVAL
+ STA OPRND1
+ LDA TVVAL+1
+ STA OPRND1+1
+ JSR SUBTR ;Get offset
+
+; Now check range
+
+ LDA RESLT
+ STA TVVAL
+ LDY RESLT+1
+ BEQ #90OUTOPCODE ;Branch if forward
+ INY
+ BNE EBADOFF ;Bad if not &FF
+ BIT TVVAL
+ BMI #30OUTOPCODE ;Branch if in range
+ BPL EBADOFF ;Branch always to moan
+90OUTOPCODE
+ BIT TVVAL
+ BPL #30OUTOPCODE ;Branch if in range
+ BMI EBADOFF ;Else branch always to moan
+95OUTOPCODE
+ LDA OPRND1
+
+; Fall through to CODEOUT
+
+
+; =======
+; CODEOUT
+; =======
+;
+; Output a byte of code
+;
+; ENTRY:- A = byte
+;
+; EXIT:-  Y preserved
+;         A, X, P corrupt
+;
+
+CODEOUT ROUT
+ LDX PASS
+ BEQ #20CODEOUT ;Don't write code on pass 1
+ STAI CODEP ;Save the byte
+ JSR OWCHECK ;Check for overwrite
+ LDA COLUMN
+ BMI #10CODEOUT ;Branch if no room to print it
+ BIT LISTFLAG
+ BPL #10CODEOUT ;Branch if not listing
+ LDAI CODEP ;Get byte back
+ JSR HEXSPACE ;Add to listing
+10CODEOUT
+ INC CODEP
+ BNE #20CODEOUT
+ INC CODEP+1
+20CODEOUT
+ RTS
+
+EBADOFF
+ JSR MESSAGE
+ = "Offset of",!SPACE
+ LDA RESLT+1
+ JSR HEXNSUP
+ LDA RESLT
+ JSR HEXNSUP ;Write out the bad offset
+ LDYIM BADOFF
+ JMP ERROR
+
+
+; =======
+; OWCHECK
+; =======
+;
+; Check for code overwriting source
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No return if overwrite
+;         Otherwise
+;            A, P corrupt
+;            X, Y preserved
+;            C = 0
+;
+
+OWCHECK
+ LDA CODEP
+ CMP LPTR
+ LDA CODEP+1
+ SBC LPTR+1
+ BCC #20CODEOUT ;Branch if not overwriting
+
+ BRK
+ = OVWRITE,"Code overwriting source",0
+
+
+        LNK     MASM06  ; End of listing routines file

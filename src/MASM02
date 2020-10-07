@@ -1,0 +1,911 @@
+        TTL     > Masm02 - Macro assembler - reset and command handling
+        OPT     MASM02
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+
+
+; OS enters here
+
+ENTRY   JMP     REENTRY
+
+TutuFlag
+        =       0       ; Tutu's flag for no defaults on RESET
+
+       [ $TURBO ; Tutu
+        &       0
+        =       &61 ; processor type (TURBO),
+        =       COPYRIGHT ; copyright offset,
+        =       0 ; ROM version number and
+        =       "TURBOMASM" ; then there was MASM
+COPYRIGHT
+        =       0,"(C)1983 Acorn",0
+        &       ENTRY
+        &       0 ; 32 BIT relocation adddress
+       |
+IOCOM   =       "IOMASM",CR
+       ]
+
+; Initialise for start of program - Tutu don't change mode if Turbo
+
+REENTRY
+       [ :LNOT: $TURBO
+        LDAIM   &75 ; Read VDU status - don't change mode if shadowing already
+        JSR     OSBYTE
+        TXA
+        ANDIM   &10     ; Shadow bit
+        BNE     REEN07
+
+        LDAIM   MODECH
+        JSR     OSWRCH
+        LDAIM   TOPMDX
+        LDXIM   128     ; Shadow mode 0
+        JSR     OSBYTE
+        PHY
+        LDAIM   7       ; Mode 7 if normal Beeb
+        PLY
+        BPL     REEN10  ; Branch if not shadowing
+        LDAIM   128     ; Else shadow mode 0
+REEN10  JSR     OSWRCH
+REEN07
+       ]
+
+       [ $TURBO
+        LDXIM   ZEROEND
+XCLEAR  CLRAX   TXPAGE-1 ;Default extra byte in page 3 as zero
+        DEX
+        BNE     XCLEAR
+       ]
+
+        JSR     ZPAGE   ; Set to page 0 in listing
+        CLR     LENGTH  ; New page header required
+
+
+        LDA     TutuFlag ; Skip Symbol table + printer initialisation on RESET
+        BNE     TutuOn
+
+        LDAIM   DEFLEN  ; Set up printer sizes
+        STA     MLENGTH
+        STA     TutuFlag
+
+        LDAIM   DEFWID
+        STA     MWIDTH
+        STA     WIDTH   ; Nothing on line
+
+        CLR     PRINT   ; Default not printing
+        CLR     HANDLE  ; No xref
+        CLR     STOP    ; Not stopping on error
+        CLR     TERSE   ; Not terse
+        CLR     MLEVEL  ; Put in macro information
+
+        LDAIM   CR      ; Set up default title
+        STA     TITLE
+
+        JSR     ZSYMB   ; Now empty global symbol table
+
+
+TutuOn  LDAIM   BRKHAND ; Set up break handling
+        STA     BRKVEC
+        LDAIM   /BRKHAND
+        STA     BRKVEC+1
+
+       [ :LNOT: $TURBO
+        LDXIM    IOCOM  ; Drag in IOMASM
+        LDYIM   /IOCOM
+        JSR     OSCLI
+       ]
+
+        JSR     OMESS
+        =       "Acorn Macro assembler ",VERA,".",VERB,VERC,!CR
+
+
+; Now do the command interpreting
+
+COMMAND
+        CLR     ERRORS
+        CLR     ERRORS+1
+        CLR     INTEXT   ; No longer processing text
+        CLR     PAGEBYTE ; Not paging
+
+        LDXIM   &FF
+        STX     FF       ; Set up for BIT
+        TXS              ; Reset stack level
+
+        JSR     MESSAGE
+        =       "Action :",!SPACE
+
+        JSR     READLINE ; Get requested action
+        JSR     DECODE   ; Decode and act
+        BRA     COMMAND
+
+
+; ======
+; DECODE
+; ======
+;
+; Decode a command line, and take relevant action
+;
+; ENTRY:- LINEPTR points to line
+;
+; EXIT:-  No registers or flags preserved
+;
+
+EOLCHK
+ JSR SPSKIP
+ JSR CRCHK
+ BNE DECO60 ;Branch if bad
+DECO45
+RTS
+ RTS ;Branch to relevant routine, returning via handler
+
+DECO60
+ BRK
+ = USRERR,&80,"command",&00
+
+DECO40
+ LDXIM INLINE
+ LDYIM /INLINE
+ JMP OSCLI ;Request MOS execution of command
+
+DECODE
+ JSR SPSKIP ;Ignore leading spaces
+ JSR CRCHK ;See if EOL
+ BEQ DECO45 ;Branch if so
+
+ CMPIM "*"
+ BEQ DECO40 ;Branch if MOS command
+
+ JSR GETLAB ;Request command name
+ BVS DECO60 ;Branch if bad
+
+ LDXIM -6
+DECO05
+ ASSERT :MSB:SYMBOL = 0
+ LDAZX SYMBOL+6
+ CMPIM SPACE ;See if finished
+ BEQ DECO06 ;Branch if so
+ CMPAX HELPTAB+6-&100
+ BNE DECO09 ;Branch if not HELP
+ INX
+ BNE DECO05 ;Loop for more comparison
+
+DECO06
+ LDXIM 0
+DECO07
+ LDYIM 5
+DECO08
+ LDAAX DECTAB
+ BEQ DECO45 ;Branch if end of table
+ JSR CHARPRINT ;Print out the name
+ INX
+ DEY
+ BPL DECO08 ;Loop till all printed
+ JSR NEWLPRINT ;Terminate
+ TXA
+ CLC
+ ADCIM 6
+ TAX
+ BRA DECO07
+
+DECO09
+ PHY ;Save current position
+ LDAIM 0
+DECO10
+ TAX
+ LDAAX DECTAB
+ BEQ DECO60 ;Branch if end of table
+ PHX
+
+ LDYIM -6
+DECO20
+ LDAAY SYMBOL+6-&100
+ CMPIM SPACE ;See if finished
+ BEQ DECO26 ;Branch if so
+ CMPAX DECTAB
+ BNE DECO30 ;Branch if symbols do not match
+ INX
+ INY
+ BNE DECO20 ;Loop till end of entry
+
+DECO26
+ PLA
+ ADCIM 5 ;Note C was 1
+ TAX
+ PLY ;Point to relevant position in line
+ LDAAX DECTAB+1
+ PHA
+ LDAAX DECTAB
+ PHA ;Set up handling routine
+ JSR SPSKIP ;Skip trailing spaces
+ BCS DECO28 ;Branch if found some
+ JSR EOLCHK ;Else must be end of line
+
+DECO25
+ LDAAX DECTAB+3
+ STA MESPTR+1
+ LDAAX DECTAB+2
+ STA MESPTR ;Get address of prompt
+ PHX ;Preserve X
+ JSR MSUB ;Output the prompt
+ JSR READLINE ;Request input
+ PLX
+ JSR SPSKIP ;Skip leading spaces
+DECO28
+ JSR CRCHK ;See if end of line
+ BEQ DECO25 ;Branch if so
+ JMIX DECTAB+4
+DECO30
+ PLA
+ CLC
+ ADCIM 6+6 ;On to next symbol
+ BRA DECO10
+
+DECTAB
+ = "ASM   "
+ & ASM-1
+ & SFMESS-1
+ & SFILE
+
+ = "GET   "
+ & GET-1
+ & FMESS-1
+ & SFILE
+
+HELPTAB
+ = "HELP  "
+ % 6 ;Pad
+
+ = "LENGTH"
+ & PRLENGTH-1
+ & VAMESS-1
+ & WLCOM
+
+ = "PRINT "
+ & PRPROG-1
+ & OPMESS-1
+ & ONOFF
+
+ = "MLEVEL"
+ & MLPROG-1
+ & OPMESS-1
+ & ONOFF
+
+ = "SAVE  "
+ & SAVE-1
+ & OFMESS-1
+ & SFILE
+
+ = "STOP  "
+ & STPROG-1
+ & OPMESS-1
+ & ONOFF
+
+ = "SYMBOL"
+ & STABLE-1
+ & OPMESS-1
+ & RTS
+
+ = "TERSE "
+ & TPROG-1
+ & OPMESS-1
+ & ONOFF
+
+ = "WIDTH "
+ & PRWIDTH-1
+ & VAMESS-1
+ & WLCOM
+
+ = "XREF  "
+ & XREF-1
+ & XRMESS-1
+ & RTS
+
+ = 0 ;End of table
+
+FMESS
+ = "File :",!SPACE
+VAMESS
+ = "Value :",!SPACE
+XRMESS
+ = "Xref output file :",!SPACE
+OPMESS
+ = "Option :",!SPACE
+SFMESS
+ = "Source file :",!SPACE
+OFMESS
+ = "Output file :",!SPACE
+
+
+; ===
+; ASM
+; ===
+; Do entire assembly
+;
+; ENTRY:- Y points to rest of command line
+;
+; EXIT:-  No registers preserved
+;
+
+ASM
+ JSR ZSYMB ;Clear global symbol table
+ JSR ZLSYMB ;Clear local symbol table
+ [ $TURBO
+ JSR COLDST ;Initialise macro tables
+ |
+ LDAIM HOSTCOLD
+ JSR UOSW0 ;Restart I/O processor
+ ]
+ [ FS = DFS ;Only need this for DFS
+;
+; =======
+; READDRV
+; =======
+;
+; Read the current drive number
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;         Drive number in DRIVE
+;
+ LDYIM 0
+ CLR DCB+4
+ CLR DCB+3
+ CLR DCB+2
+ ASSERT :MSB:BGBP = 0
+ ASSERT :MSB:DCB = 0
+ LDAIM BGBP
+ STA DCB+1
+ LDAIM RDDRV ;Read drive request
+ LDXIM DCB
+ JSR OSBGBP ;Multiple get/put !
+ DEC BGBP
+ BNE RDDR20 ;Branch if bad disc name
+ DEC BGBP+2
+ BNE RDDR20 ;Branch if bad directory size
+ LDA BGBP+1
+ ANDIM 3 ;Drive number was in ASCII
+ STA DRIVE ;Remember starting drive
+ LDA BGBP+3
+ CMPIM "X"
+ BNE RDDR10
+ BRK
+ = BADQ,&80,"qualifier"
+RDDR20
+ BRK
+ = BADFS,&80,"FS",&00
+RDDR10
+ ]
+
+ JSR NEXTPAGE ;Start on a new page
+ JSR ZPAGE
+ JSR MESSAGE
+ = NL,"Macro library :",!SPACE
+ JSR READLINE ;Get a line
+ JSR SPSKIP ;Ignore leading spaces
+ JSR CRCHK ;See if blank
+ BCS ASM60 ;Ignore if so
+ JSR GETFNAME ;Put file name in CURFILE
+ LDAIM 0 ;Pass 1
+ JSR MSTART ;Start it
+
+ASM10
+ JSR FSTART ;Start file
+ASM20
+ LDAIM &FF
+ STA COLUMN
+ JSR GETLINE ;Get a source line
+ JSR SCOMLINE ;See if all comment
+ BCS ASM40 ;Branch if all comment
+ JSR DIRFIND ;See if directive
+ BIT ERRSW
+ BMI ASM50 ;Branch if error
+ BCC ASM50 ;Or not directive
+ LDX DIRNUM
+ CPXIM TMACRO ;See if MACRO directive
+ BEQ ASM30 ;Branch if so
+ CPXIM TEND ;Is it END
+ BEQ ASM60 ;Carry on if so
+ CPXIM TLNK ;Is it LNK
+ BNE ASM50 ;Bad if not
+ JSR SPSKIP ;Skip leading spaces
+ JSR GETFNAME ;New file name
+ BRA ASM10 ;Loop
+
+ASM30
+ JSR HMACRO ;Handle definition
+ASM40
+ JSR NEWLINE ;On to next line
+ BRA ASM20 ;Loop
+
+ASM50
+ BRK
+ = USRERR,&80,"macro library",0
+
+ASM60
+ LDAIM 0
+ JSR PASS1 ;Do first pass
+ JSR ZLSY10 ;Reset to start of local label table
+
+ LDAIM 1
+ JSR PASS2
+ LSR STOP ;Unset stop on error now (before returning to command mode)
+ JSR MESSAGE
+ = "Assembly finished, no errors",!CR
+
+ZPAGE
+ CLR PGNUM
+ CLR PGNUM+1 ;At page zero
+ RTS
+
+
+; =====
+; PASS2
+; =====
+;
+; Perform the second pass
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No conditions
+;
+
+P290
+ JSR MACEXP ; Handle unknown opcode (MACRO)
+ BRA P220 ;Continue on next line
+
+P2100
+ JSR DIRSUBS ;See if allowed now, and whether to substitute
+ BCC P230 ;Branch if not allowed
+ JSR P1200 ;Common code with pass 1
+ BRA P230
+
+
+PASS2
+ JSR PSTART ;Set up for start of pass
+
+P210
+ JSR FSTART ;Start of file
+
+P220
+ JSR GETLINE ;Get a source line
+ JSR SETCOL ;Allow 9 characters of code to be printed
+ JSR SCOMLINE ;See if all comment now
+ BCS P230 ;Branch if so
+
+ JSR DIRFIND ;See if a directive
+ BCS P2100 ;Branch if directive
+
+ CLR LCLFLAG ;No more LCL directives
+ LDA IFDEPTH
+ ORA WDEPTH
+ BNE P230 ;Ignore if conditioned or WHILEd out
+
+ JSR VARLY0 ;Subststute string variables from start of line
+ JSR SKIPSUB ;Go past first term on line
+ JSR COMCHK ;See if all comment
+ BCS P225 ;Branch if so
+
+ JSR GETLAB ;Look for opcode
+ JSR OPCODE ;See if we know this opcode
+ BCC P290 ;Branch if not
+
+; Now handle standard line
+
+P225
+ JSR SP0SKIP ;See if label field exists
+ BCS P270 ;Branch if not
+
+; Now handle global/local label definition
+
+ JSR COMCHK
+ BCS P230 ;Ignore if all comment
+
+ JSR GETSMAN ;Look for manifest symbol
+ BVC P260 ;Branch if found
+
+ JSR LOCLAB ;Try for local label definition
+P260
+ LDY CHARPTR ;Back to end of label
+ JSR SPSKIP ;Check syntax
+ BCS P270 ;Branch if not end of line
+
+; Here we have finished with the line
+
+P230
+ JSR LISTING ;Next line please
+ BRA P220 ;Loop
+
+
+; Now deal with opcode/operand portion
+
+P270
+ JSR COMCHK
+ BCS P230 ;Ignore if all comment
+ JSR GETLAB ;Past opcode
+ JSR SPSKIP ;Skip possible trailing spaces
+ LDA OPCSTAT
+ EORIM NOOPND ;See if no operand opcode
+ BEQ P2160 ;Branch if so
+
+; Here we handle the operand(s) which must be present
+
+ CMPIM ZPOPT:EOR:NOOPND
+ BNE P2180
+ ROR INDFLAG;Set INDFLAG according to OPCSTAT
+
+P2180
+ JSR ARDEXPR ;Get first expression
+ LDA TVVAL
+ STA OPRND1
+ LDA TVVAL+1
+ STA OPRND1+1 ;Save first expression
+ [ $R6500
+ LDA OPCSTAT
+ CMPIM BBRTYPE
+ BCC P2160 ;Branch if no further expressions required
+ ASSERT RMBTYPE>BBRTYPE
+ INY ;Past terminator
+ JSR ARDEXPR ;Second expression
+ BCS P230 ;Branch if bad
+ LDA TVVAL
+ STA OPRND2
+ LDA TVVAL+1
+ STA OPRND2+1 ;Save first expression
+ LDA OPCSTAT
+ CMPIM BBRTYPE ;See if another expression required
+ BNE P2160 ;Branch if not
+ INY ;Past terminator
+ JSR ARDEXPR ;Third expression
+ BCS P230 ;Branch if bad
+ ]
+
+; Here we output the code for the opcode, operand(s)
+
+P2160
+ JSR OUTOPCODE
+ JSR INCPC ;Increment program counter
+
+; Note no problem with zero page options, since OUTOPCODE has dealt with it
+
+ BRA P230 ;Next instruction please
+
+
+; =====
+; PASS1
+; =====
+;
+; Perform the first pass
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No conditions
+;
+
+P190
+ JSR MACEXP ; Handle unknown opcode (MACRO)
+ BRA P130 ;Continue on next line
+
+P1100
+ JSR DIRSUBS ;See if allowed now, and whether to substitute
+ BCC P130 ;Branch if not allowed
+ JSR P1200
+ BRA P130
+
+P1200
+ LDX DIRNUM ;Get directive number
+ LDAAX DTABHI ; Now split according to directive
+ PHA
+ LDAAX DTABLO
+ PHA ;Get address of routine
+ RTS ;Branch
+
+
+PASS1
+ JSR PSTART ;Set up for start of pass
+
+P110
+ JSR FSTART ;Start of file
+
+P120
+ LDAIM &FF
+ STA COLUMN ;Allow no code padding
+ JSR GETLINE ;Get a source line
+ JSR SCOMLINE ;See if all comment now
+ BCS P130 ;Branch if so
+
+ JSR DIRFIND ;See if a directive
+ BIT ERRSW ;See if error
+ BMI P130 ;Ignore if so
+ BCS P1100 ;Branch if directive
+
+ CLR LCLFLAG ;No more LCL directives
+ LDA IFDEPTH
+ ORA WDEPTH
+ BNE P130 ;Ignore if conditioned or WHILEd out
+
+ JSR VARLY0 ;Subststute string variables from start of line
+ BIT ERRSW ;See if error
+ BMI P130 ;Ignore if so
+ JSR SKIPSUB ;Go past first term on line
+ BCS P130 ;Ignore if error
+ JSR COMCHK ;See if all comment
+ BCS P125 ;Branch if so
+
+ JSR GETLAB ;Look for opcode
+ BVC P122 ;Branch if label ok
+
+ LDYIM BADOPC
+ JSR ERROR ;Moan
+ BRA P130
+
+P122
+ JSR OPCODE ;See if we know this opcode
+ BCC P190 ;Branch if not
+
+; Now handle standard line
+
+P125
+ JSR SP0SKIP ;See if label field exists
+ BCS P170 ;Branch if not
+
+; Now handle global/local label definition
+
+ JSR COMCHK
+ BCS P130 ;Ignore if all comment
+
+ JSR GETSMAN ;Look for manifest symbol
+ BVC P140 ;Branch if found
+
+ JSR LOCLAB ;Try for local label definition
+ BCC P160 ;Branch if ok
+
+; Here we have finished with the line
+
+P130
+ JSR LISTING ;Next line please
+ BRA P120 ;Loop
+
+P140
+ JSR DPSYMB ;Define symbol with value PROGC
+
+P160
+ LDY CHARPTR ;Back to end of label
+ JSR SPSKIP ;Check syntax
+ BCS P170 ;Branch if ok
+
+ JSR COMCHK ;See if comment
+ BCS P130 ;Finished if so
+
+P165
+ JSR EBADSYN ;Else complain
+ BRA P130 ;And ignore rest of line
+
+
+; Now deal with opcode/operand portion
+
+P170
+ JSR COMCHK
+ BCS P130 ;Ignore if all comment
+ JSR GETLAB ;Past opcode
+ JSR SPSKIP ;Skip possible trailing spaces
+ LDA OPCSTAT
+ EORIM NOOPND ;See if no operand opcode
+ BEQ P1160 ;Branch if so
+ BCC P165 ;Complain if trailing spaces missing
+
+; Here we handle the operand(s) which must be present
+
+ CMPIM ZPOPT:EOR:NOOPND
+ BNE P1120
+ ROR INDFLAG;Set INDFLAG according to OPCSTAT
+
+P1120
+ JSR ARTEXPR ;Get first expression
+ BCC P1140 ;Branch if ok
+ BVS P130 ;Branch if syntax error
+
+P1140
+ [ $R6500
+ LDA OPCSTAT
+ CMPIM BBRTYPE
+ BCC P1160 ;Branch if no further expressions required
+ ASSERT RMBTYPE>BBRTYPE
+ LDAIY LINEPTR ;Get terminator
+ CMPIM ","
+ BNE P165 ;Branch if syntax error
+ INY ;Past terminator
+ JSR ARTEXPR ;Second expression
+ BCC P1150 ;Branch if ok
+ BVS P130 ;Ignore if syntax error
+P1150
+ LDA OPCSTAT
+ CMPIM BBRTYPE ;See if another expression required
+ BNE P1160 ;Branch if not
+ LDAIY LINEPTR ;Get terminator
+ CMPIM ","
+ BNE P165 ;Branch if syntax error
+ INY ;Past terminator
+ JSR ARTEXPR ;Third expression
+ BCC P1160 ;Branch if ok
+ BVS P130 ;Ignore if syntax error
+ ]
+P1160
+ JSR COMLINE ;Check all comment now
+ BCC P165 ;Bad if not
+ LDA OPCSTAT
+ EORIM ZPOPT ;See if more bytes possible
+ BNE P1170 ;Branch if not
+ LDX TVVAL+1
+ BNE P1180 ;Branch if two byte anyway
+ BIT FORCED ;See if more bytes required
+ BPL P1170 ;Branch if not
+P1180
+ ASSERT ANYTWO=0
+ STA OPCSTAT ;Treat as two byte operand opcode
+P1170
+ JSR INCPC ;Increment program counter
+ BRA P130
+
+
+; ======
+; PSTART
+; ======
+;
+; Initialize at start of pass
+;
+; ENTRY:- A = pass number
+;
+; EXIT:-  X, Y corrupt
+;         A = 0
+;         C, V preserved
+;
+
+PSTART ROUT
+
+   JSR   MSTART
+
+   JSR   MESSAGE
+   = "Pass",!SPACE
+
+   LDA   PASS
+   CLC
+   ADCIM "1"
+   JSR   CHARPRINT
+   JSR   NEWLPRINT
+
+   LDXIM FILLEN ; Copy FIRFILE into CURFILE
+10 LDAAX FIRFILE
+   STAAX CURFILE
+   DEX
+   BPL   #10
+   RTS
+
+
+; ======
+; CUROBJ
+; ======
+;
+; Copy CURFILE into OBJFILE as 'X.CURFILE'
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, X, P corrupt
+;         Y preserved
+;
+
+CUROBJ ROUT
+
+   LDXIM FILLEN
+10 LDAAX CURFILE
+   STAAX OBJFILE+2
+   DEX
+   BPL   #10
+
+   LDAIM "X"
+   STA   OBJFILE
+   LDAIM "."
+   STA   OBJFILE+1
+   RTS
+
+
+; ======
+; MSTART
+; ======
+;
+; Initialize at start of macro library pass
+;
+; ENTRY:- A = pass number
+;
+; EXIT:-  X, Y corrupt
+;         A = 0
+;         C, V preserved
+;
+
+MSTART
+ STA PASS ;Save the pass number
+
+ LDA PRINT
+ STA LISTFLAG
+ STA LISTREQ ;Default listing, and requested
+ STA OLIST ;And provious state
+
+ LDAIM CR
+ STA TITLE ;Default title
+
+ CLR NOCPU ;Assume ordinary 6502
+ CLR PROGC
+ CLR PROGC+1 ;Program origin
+ CLR CPU ;Default ordinary 6502
+ CLR VARC
+ CLR VARC+1 ;Variable origin
+ CLR INTEXT ;Not currently processing text
+
+ LDXIM 5
+MSTA10
+ CLRAX ROUTINE ;Set default routine name
+ DEX
+ BPL MSTA10
+
+ STX PAGEBYTE ;Currently paging (note X < 0)
+ [ FS = DFS ;Only need this for DFS
+ LDA DRIVE
+ STA ODRIVE
+ STA SDRIVE ;Set up source and object drives
+ ]
+ RTS
+
+
+; ======
+; FSTART
+; ======
+;
+; Initialize at start of file
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers corrupt
+;
+
+FSTART
+ LDAIM /CODE
+ STA CODEP+1
+ LDAIM /TEXT
+ STA LPTR+1
+ ASSERT (:LSB:CODE=0):LAND:(:LSB:TEXT=0)
+ JSR SETLNUM ;Reset line numbers
+ CLR STAPTR ;Kill conditional and WHILE stack
+ CLR CODEP
+ CLR LPTR
+ CLR IFFLAG
+ CLR IFDEPTH
+ CLR WFLAG
+ CLR LCLFLAG
+ CLR WDEPTH
+ CLR MDEPTH
+ CLR NOCODE ;No code produced at present
+ JSR SRCLOD ;Get the source
+ CLR LOADAD+2
+ CLR LOADAD+3
+ CLR EXADDR+2
+ CLR EXADDR+3 ;Set up for save at end of file on pass 2
+ SEC
+ ROR INTEXT ;Now text processing
+ LDAIM /PSTACK
+ STA PSTAPTR
+ ASSERT :LSB:PSTACK=0
+
+SETADDR
+ LDA PROGC
+ STA LOADAD
+ STA EXADDR
+ LDA PROGC+1
+ STA LOADAD+1
+ STA EXADDR+1
+ RTS
+
+
+        LNK     MASM03  ; End of main routines file

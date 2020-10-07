@@ -1,0 +1,892 @@
+ TTL Macro assembler - expression evaluation routines -> MASM19
+ OPT MASM19
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+ < 3 ;Sources now on drive 3
+;
+; =======
+; AREEXPR
+; =======
+;
+; Get arithmetic expression, moaning about undefined symbols
+; And checking for end of line
+;
+; ENTRY:- Y points to start of expression
+;         INDFLAG specifies whether to force identifiers
+;
+; EXIT:-  C = 0 <=> good expression
+;         Y points to termination point
+;         If C = 1 then V = 1 => syntax error, V = 0 => undefined error
+;         Result in TVVAL, TVVAL+%1
+;         FORCED < 0 <=> expression forced 2 byte
+;
+AREEXPR
+ JSR ARDEXPR ;Get expression
+ BCC LOGE10 ;Branch if good to check termination
+ RTS ;Else return
+;
+; =======
+; ARDEXPR
+; =======
+;
+; Get arithmetic expression, moaning about undefined symbols
+;
+; ENTRY:- Y points to start of expression
+;         INDFLAG specifies whether to force identifiers
+;
+; EXIT:-  C = 0 <=> good expression
+;         Y points to termination point
+;         If C = 1 then V = 1 => syntax error, V = 0 => undefined error
+;         Result in TVVAL, TVVAL+%1
+;         FORCED < 0 <=> expression forced 2 byte
+;
+ARDEXPR
+ JSR ARTEXPR
+ BCC ARTE20 ;Branch if good
+ARDE10
+ BVS ARTE20 ;Branch if syntax error
+ JMP EUNDSYMB ;Moan bad symbol
+;
+; =======
+; ARTEXPR
+; =======
+;
+; Get arithmetic expression
+;
+; ENTRY:- Y points to start of expression
+;         INDFLAG specifies whether to force identifiers
+;
+; EXIT:-  C = 0 <=> good expression
+;         Y points to termination point
+;         If C = 1 then V = 1 => syntax error, V = 0 => undefined error
+;         Result in TVVAL, TVVAL+%1
+;         FORCED < 0 <=> expression forced 2 byte
+;
+ARTEXPR
+ JSR EXPRESSION
+ BCS ARTE20 ;Branch if bad
+ ASSERT MANSTR<MANLOG:LAND:MANLOG<MANARITH
+ CMPIM MANLOG
+ BEQ ARTE30 ;Branch if bad
+ BCS ARTE40 ;Branch if MANARITH
+ LDAAX ESTACK-2 ;Get string length
+ BEQ ARTE30 ;Branch if too short
+ CMPIM 2+1 ;Or too long
+ BCS ARTE30
+ STA SLEN
+ CLR TVVAL+1 ;Assume one character
+ LDAAX ESTACK-3
+ STA TVVAL
+ DEC SLEN
+ BEQ ARTE10 ;Branch if one character string
+ DEX ;Handle like arithmetic, one position down
+ARTE40
+ LDAAX ESTACK-2
+ STA TVVAL+1
+ LDAAX ESTACK-3
+ STA TVVAL
+ARTE10
+ CLC
+ARTE20
+ RTS
+ARTE30
+ LDYIM BADTYPE
+ JMP EXPR90 ;Moan about type mismatch
+;
+; =======
+; LOGEXPR
+; =======
+;
+; Get logical expression and check for end of line, undefined symbols
+;
+; ENTRY:- Y points to start of expression
+;
+; EXIT:-  C = 0 <=> good expression
+;         Y points to termination point
+;         If C = 1 then V = 1 => syntax error, V = 0 => undefined error
+;         Result in TVVAL, TVVAL+%1
+;
+LOGEXPR
+ JSR EXPRESSION
+ BCS ARDE10 ;Branch if bad
+ CMPIM MANLOG
+ BNE ARTE30 ;Branch if bad to moan
+ JSR ARTE40 ;Get value
+LOGE10
+ BIT FF ;Ensure error not interpreted as undefined symbol
+ JSR ECOMLINE
+ RORA
+ EORIM &80
+ ASLA ;Invert carry
+ RTS
+;
+; =======
+; STREXPR
+; =======
+;
+; Get string expression and check for end of line, undefined symbols
+;
+; ENTRY:- Y points to start of expression
+;
+; EXIT:-  C = 0 <=> good expression
+;         Y points to termination point
+;         If C = 1 then V = 1 => syntax error, V = 0 => undefined error
+;         Result on stack
+;         Length in SLEN
+;
+STREXPR
+ JSR EXPRESSION
+ BCS ARDE10 ;Branch if bad
+ LDX ESTPTR
+ LDAAX ESTACK-1
+ [ MANSTR /= 0
+ ! 0,"MANSTR not zero"
+ ]
+ BNE ARTE30 ;Branch always to moan
+ LDAAX ESTACK-2
+ STA SLEN ;Save string length
+ BRA LOGE10 ;Common code
+;
+; ==========
+; EXPRESSION
+; ==========
+;
+; Evaluate an inline expression
+;
+; ENTRY:- Y points to start of expression
+;         INDFLAG specifies whether to force identifiers
+;
+; EXIT:-  C = 0 <=> good expression
+;         If C = 1 then V = 1 => syntax error, V = 0 => undefined error
+;         Y points to termination point
+;         Result on stack
+;         X, ESTPTR points to TOS
+;         A = expression tpe
+;         FORCED < 0 <=> expression forced 2 byte
+;
+EXPRESSION
+ ASSERT STBOT = 0
+ CLR ESTACK ;Set up bottom of stack
+ CLR PREVOP ;And previous operator
+ LDXIM 1 ;Stack pointer
+ CLR FORCED ;Expression not yet forced
+ CLR DEFINED ;And is fully defined
+EXPR10
+;
+; Here we are looking for an operand
+;
+ JSR TOKEN ;Get next token
+ LDA TTYPE
+ BMI EXPR80 ;Branch if bad token
+ BEQ EXP100 ;Branch if operator
+ CMPIM BRATYPE ;See if (
+ BEQ EXP100 ;Treat as operator
+;
+; Now stack operand
+;
+ LDA TVTYPE ;Get type of operand
+ BEQ EXPR30 ;Branch if string type
+ [ MANSTR/=0
+ ! 0,"MANSTR not 0"
+ ]
+ LDA TVVAL
+ STAAX ESTACK
+ INX
+ LDA TVVAL+1
+ STAAX ESTACK
+ INX
+ LDA TVTYPE
+ STAAX ESTACK
+ INX
+ CPX ESTPTR ;Check for stack wraparound
+ BCC EXPR70 ;Branch if so
+EXPR20
+ BRA EXP150 ;Go to look for operator
+EXPR30
+;
+; Here we are stacking a string type operand
+;
+ PHY ;Save current position in line
+ LDY CHARPTR ;Get pointer to start of string
+ LDA TVLEN
+ STA SLEN
+ BEQ EXPR60 ;Branch if empty string
+EXPR40
+ LDAIY LINEPTR
+ STAAX ESTACK
+ INY
+ INX
+ CMPIM """" ;See if escape
+ BNE EXPR50 ;Branch if not
+ INY ;Step on extra character
+EXPR50
+ DEC SLEN
+ BNE EXPR40 ;Loop till all copied
+EXPR60
+ LDA TVLEN
+ STAAX ESTACK
+ INX
+ LDA TVTYPE
+ STAAX ESTACK
+ INX
+ PLY ;Restore line position
+ CPX ESTPTR
+ BCS EXP150 ;Branch if not stack overflow
+EXPR70
+;
+; Complain about stack overflow
+;
+ JMP EXPSTOVER
+EXPR80
+;
+; Complain about bad token
+;
+ LDYIM BADOP
+EXPR90
+ SEC
+ BIT FF
+ JMP ERROR ;Return via ERROR
+EXP100
+;
+; Here we have found an operator when expecting an operand
+;
+ LDA TVVAL
+ CMPIM BRA ;See if (
+ BNE EXP120
+EXP110
+ STAAX ESTACK
+ STA PREVOP
+ INX
+ BEQ EXPR70 ;Branch if stack overflow
+ BRA EXPR10 ;Next operand
+EXP120
+ CMPIM UPLUS
+ BCS EXP110 ;Branch if definitely unary
+ CMPIM SLASH
+ BNE EXP130
+ LDAIM USLASH
+EXP125
+ BRA EXP110
+EXP130
+ CMPIM PLUS
+ BCC EXP140 ;Branch if not unary
+ CMPIM MINUS+1
+ BCS EXP140 ;Branch if not unary
+ ADCIM UPLUS-PLUS ;Convert to unary form
+ BRA EXP110
+EXP140
+ SEC
+ BRA EXP225 ;Moan
+EXP150
+;
+; Here we are looking for an operator
+;
+ JSR TOKEN ;Get next token
+ LDA TTYPE
+ BEQ EXP155 ;Branch if operator
+ LDYIM BADOPE
+ BRA EXPR90 ;Moan
+EXP155
+ LDA TVVAL
+ CMPIM UPLUS
+ BCC EXP160
+ LDYIM BADSYN
+ BRA EXPR90 ;Moan
+EXP160
+;
+; Here we are looking to apply an operator
+;
+ LDA TVVAL ;Value of current token
+ CMPIM KET
+ BNE EXP200 ;Branch if not )
+ LDA PREVOP
+ CMPIM BRA ;Is previous operator (
+ BNE EXP200
+;
+; Here we throw away both BRA and KET,
+; move the operand down the stack and reset PREVOP
+;
+ PHY
+ LDYIM 3 ;Expected length
+ LDAAX ESTACK-1 ;Get type of operand
+ BNE EXP170 ;Branch if not manifest string
+ [ MANSTR /= 0
+ ! 0,"MANSTR not 0"
+ ]
+ LDAAX ESTACK-2 ;Get string length
+ ADCIM 1 ;Increment by 2
+ TAY
+EXP170
+ STY TEMPY
+ TXA
+ SEC
+ SBC TEMPY
+ TAX ;Point to bottom of operand
+EXP180
+ LDAAX ESTACK
+ STAAX ESTACK-1 ;Shuffle down operand
+ INX
+ DEY
+ BNE EXP180
+ DEX ;Point to new top of stack
+;
+; Now calculate new previous operator
+;
+ JSR NEWPOP
+ PLY ;Restore previous line pointer
+ BRA EXP150
+EXP200
+ LDA TVVAL ;Get current token
+ ASSERT STTOP = 1
+ DEA ;Check for stack top
+ BNE EXP210 ;Branch if not
+ LDA PREVOP
+ [ STBOT=0
+ |
+ CMPIM STBOT
+ ]
+ BEQ EXP230 ;Branch if finished
+EXP210
+ PHY ;Save line position
+ LDY PREVOP
+ LDAAY PREC ;Get precedence of previous operator
+ LDY TVVAL ;Get current operator
+ CMPAY PREC ;Compare with current precedence
+ PLY ;Restore line pointer
+ BCS EXP220 ;Branch if previous >= current
+;
+; Here the current operator has higher precedence
+;
+ LDA TVVAL
+ BRA EXP125 ;Handle like vaild unary
+EXP220
+;
+; Here we can actually evaluate the previous operator
+;
+ JSR APPLY ;Do the evaluation
+ BCS EXP225 ;Branch if bad
+;
+; Now discover new previous operator
+;
+ JSR NEWPOP
+ BRA EXP160
+EXP225
+ BIT FF
+ JMP EBADSYN
+EXP230
+;
+; Here we have finished evaluating
+;
+ LDAAX ESTACK-1
+ BPL EXP250 ;Branch if manifest object
+ CMPIM SYMUNK ;See if undefined or bad
+ BCS EXP270 ;Branch if so
+ PHA
+ LDAAX ESTACK-2
+ STA SYMPT+1
+ LDAAX ESTACK-3
+ STA SYMPT
+ PLA
+ ASLA ;Set zero <=> string
+ BEQ STRCOPY ;Branch if so
+ PHA ;Save shifted type
+ PHY ;Save line pointer
+ LDYIM DATAOFF
+ LDAIY SYMPT
+ STAAX ESTACK-3
+ INY
+ LDAIY SYMPT
+ STAAX ESTACK-2
+ PLY
+ PLA
+ LSRA ;Shift type back
+ STAAX ESTACK-1
+ STX ESTPTR
+EXP250
+ CLC
+ BIT DEFINED
+ BPL EXP280 ;Branch if all defined
+ SEC
+ CLV
+ RTS
+EXP270
+;
+; Here the final operand is undefined/bad symbol
+; Z = 0 <=> undefined
+; C = 1
+;
+ CLV
+ BEQ EXP275 ;Branch if merely undefined
+EBADMAN
+ LDYIM BADMAN
+ JMP EXPR90 ;Return via ERROR
+EXP275
+ LDAIM MANARITH
+ STAAX ESTACK-1 ;Convert undefined symbol to manifest arithmetic
+EXP280
+ RTS
+;
+; =======
+; STRCOPY
+; =======
+;
+; Copy string from symbol table onto stack
+;
+; ENTRY:- ESTPTR points to TOS+3
+;         Symbol table reference in SYMPT
+;
+; EXIT:-  X, ESTPTR points to TOS+1
+;         Y preserved
+;         C = 0
+;         A = MANSTR
+;
+STRCOPY
+ PHY
+ LDYIM 8
+ LDAIY SYMPT ;Get string pointer
+ PHA
+ INY
+ LDAIY SYMPT
+ STA SYMPT+1
+ PLA
+ STA SYMPT
+ [ $TURBO ;String control block is in 0 volume
+ CLR XSYMPT
+ ]
+ LDYIM 2
+ LDAIY SYMPT ;Get string length
+ STA SLEN
+ STA TVLEN ;Save it
+ DEY
+ LDAIY SYMPT
+ PHA
+ DEY
+ LDAIY SYMPT
+ STA SYMPT
+ PLA
+ STA SYMPT+1 ;Point to string
+;
+; Now copy string onto stack
+;
+ LDX ESTPTR
+ DEX
+ DEX
+ DEX ;Point to TOS
+ STX ESTPTR
+ LDYIM 0
+ LDA SLEN
+ BEQ STRC20 ;Branch if empty string
+STRC10
+ LDAIY SYMPT
+ STAAX ESTACK ;Copy
+ INX
+ INY
+ DEC SLEN
+ BNE STRC10
+STRC20
+ LDA TVLEN
+ STAAX ESTACK
+ LDAIM MANSTR
+ INX
+ STAAX ESTACK
+ INX
+ CPX ESTPTR
+ BCC EXPSTOVER ;Complain if stack overflow
+ [ $TURBO
+ LDAIM /SYMSHI ;Return pointer to SYMSHI
+ STA XSYMPT
+ ]
+ PLY
+ STX ESTPTR
+ LDAIM MANSTR
+ CLC
+ RTS
+EXPSTOVER
+ BRK
+ = ESTOVER,"Expression stack overflow",&00
+;
+; ======
+; NEWPOP
+; ======
+;
+; Calculate new previous operator
+;
+; ENTRY:- X points to top of stack
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;         C = 1
+;         PREVOP updated
+;
+NEWPOP
+ STX ESTPTR
+ PHY
+ LDYIM 3 ;Where to look for operator
+ LDAAX ESTACK-1
+ BNE NEWP10 ;Branch if not manifest string
+ [ MANSTR /= 0
+ ! 0,"MANSTR not 0"
+ ]
+ LDYAX ESTACK-2 ;Get string length
+ INY
+ INY ;Increment by 2
+NEWP10
+ STY TEMPY
+ TXA
+ SEC
+ SBC TEMPY ;Note this sets C = 1
+ TAX
+ LDAAX ESTACK-1
+ STA PREVOP
+ LDX ESTPTR
+ PLY
+ RTS
+PREC
+;
+; The table of precedences
+;
+ %  2 ;2 of precedence 0
+ =  1, 1 ;2 of precedence 1
+ =  2, 2, 2 ;3 of precedence 2
+ =  3, 3, 3, 3, 3, 3 ;6 of precedence 3
+ =  4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 ;16 of precedence 4
+ =  5, 5, 5 ;3 of precedence 5
+ =  6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 ;11 of precedence 6 (unary)
+;
+; Check right number of entries
+;
+ [ .-PREC-STR /= 1
+ ! 0,"Precedence table wrong"
+ ]
+OPETAB
+;
+; The table of one character operators
+;
+ = "+-*/)<>=!"
+OPELEN * .-OPETAB
+OPEVAL
+;
+; The table of operator values
+;
+ = PLUS,MINUS,STAR,SLASH,KET,LESS,GREA,EQ,SHRIEK
+ [ .-OPEVAL-OPELEN /= 0
+ ! 0,"Operator tables inconsistent"
+ ]
+;
+; =====
+; TOKEN
+; =====
+;
+; Get an input token, which may be an operator, an operand or a BRA
+;
+; ENTRY:- Y points to current position in line
+;         INDFLAG specifies whether undefined identifiers should be forced
+;
+; EXIT:-  Y updated
+;         C = 1 <=> error found and reported
+;         A = token type
+;         X = new TOS
+;         Result in TTYPE, TVALUE
+;         For manifest strings, CHARPTR points to start of string in line
+;         DEFINED updated if undefined label encountered
+;         FORCED updated if forcing label found
+;
+TOK290
+;
+; Handle local label reference
+;
+ LDAIM MANARITH
+ STA TVTYPE ;Assume we will find it
+ JSR LABUSE
+ BVS TOK230 ;Branch if error
+ LDAIM &80
+ STA FORCED
+ BCS TOK285 ;Branch if good
+ STA DEFINED ;Expression now undefined
+ LDA PASS
+ BEQ TOK285 ;Allow missing labels on pass 1
+ LDYIM BADLOC
+ JSR ERROR
+ BRA TOK230
+TOK280
+ JSR TOKSTR ;Request manifest string
+ BCC TOK230 ;Branch if bad
+TOK285
+ JMP TOKE80 ;Else return good
+TOK270
+ JSR GETVAR ;Look for name
+ BVS TOK230 ;Branch if bad
+ JSR TOKVAR
+ BCC TOK230 ;Branch if unknown
+ JMP TOKE70 ;Finish
+TOK250
+ JSR GETLAB ;Look for name
+ BVS TOK230 ;Branch if bad
+ LDAIY LINEPTR
+ INY
+ CMPIM ":"
+ BEQ TOK260 ;Branch if good termination
+ CMPIM SPACE
+ BNE TOK230 ;Branch if bad termination
+ DEY
+TOK260
+ JSR TOKLOOK
+ BCC TOK230 ;Branch if unknown token
+ BRA TOKE20 ;Exit
+TOK220
+ DEY
+ JSR DECNUM ;Look for decimal number
+ BCS TOK240 ;Branch if ok
+TOK230
+ JMP TOK140 ;Complain
+TOK240
+ JMP TOK120 ;Exit good
+TOKEN
+ STX ESTPTR ;Save current TOS
+ JSR SPSKIP ;Skip spaces first
+ STY CHARPTR ;Save pointer to start of token
+ JSR GETSMAN ;Try for manifest label
+ BVC TOKE50 ;Branch if found
+ LDY CHARPTR ;Back to start of token
+ JSR LNUMCHK ;Get start of token and see if numeric
+ INY ;Past token
+ BCC TOK220 ;Branch if so
+ CMPIM "#"
+ BEQ TOK290
+ CMPIM "$"
+ BEQ TOK270
+ CMPIM """" ;Look for manifest string
+ BEQ TOK280 ;Branch if found
+ CMPIM ":" ;Look for operator token
+ BEQ TOK250
+ CMPIM "@" ;See if current variable symbol
+ BEQ TOKE90
+ CMPIM "."
+ BEQ TOK100 ;Branch if current PC symbol
+ CMPIM "&" ;Look for hexadecimal number
+ BEQ TOK130 ;Branch if found
+ CMPIM "("
+ BEQ TOKE40 ;Branch if BRA (special case)
+;
+; Now try for ordinary operators, or end of expression
+;
+ LDXIM OPELEN-1 ;Length of operator table
+ DEY
+ LDAIY LINEPTR ;Actual character back again
+TOKE10
+ CMPAX OPETAB
+ BEQ TOKE30 ;Branch if found operator
+ DEX
+ BPL TOKE10 ;Loop till all looked at
+;
+; Here the token is unknown, i.e. end of expression
+;
+ LDAIM STTOP ;Top of stack token
+TOKE20
+ STA TVVAL
+ LDAIM OPERATOR
+ BRA TOKE85
+TOKE30
+ LDAAX OPEVAL ;Get value of operator token
+ INY ;Past token
+ BRA TOK160 ;Exit
+TOKE40
+ LDAIM BRA
+ STA TVVAL
+ LDAIM BRATYPE ;Special case for BRA
+ BRA TOKE85
+TOKE50
+;
+; Handle manifest label
+;
+ JSR UGSYMB ;Look up in table as usage
+ LDYIM STATOFF
+ LDAIY SYMPT ;Look at status
+ BPL TOKE60 ;Branch if not forcing
+ STA FORCED ;Set expression forced mode
+TOKE60
+ LDYIM SYMARITH
+ ANDIM &60
+ BEQ TOKE70 ;Branch if fully defined
+ ASSERT DEF=0
+ INY ;Y := SYMUNK
+ CMPIM SOMEDEF
+ BNE TOKE65 ;Branch if not partially defined
+ LDA PASS
+ BEQ TOKE65 ;O.k. if pass 1
+ JSR SCANTDEF ;Mark symbol undefinable
+ LDYIM SYMUNK
+ LDAIM CANTDEF
+TOKE65
+ CMPIM CANTDEF ;See if undefinable
+ [ SYMUNK-SYMARITH /= 1
+ ! 0,"SYMARITH and SYMUNK not contiguous"
+ ]
+ BNE TOKE70 ;Branch if not
+ INY ;Y := SYMBAD
+ [ SYMBAD-SYMUNK /= 1
+ ! 0,"SYMUNK and SYMBAD not contiguous"
+ ]
+TOKE70
+ STY TVTYPE
+ LDA SYMPT
+ STA TVVAL
+ LDA SYMPT+1
+ STA TVVAL+1
+ LDY CHARPTR
+TOKE80
+ LDAIM ITEM
+TOKE85
+ LDX ESTPTR ;Return new TOS
+ STA TTYPE
+ RTS
+TOKE90
+ LDA VARC
+ STA TVVAL
+ LDA VARC+1
+ BRA TOK110
+TOK100
+ LDA PROGC
+ STA TVVAL
+ LDA PROGC+1
+TOK110
+ STA TVVAL+1
+TOK120
+ LDAIM MANARITH
+ STA TVTYPE
+ BRA TOKE80
+TOK130
+ JSR HEXNUM ;Request hex number
+ BCC TOK120 ;Branch if found
+TOK140
+ LDAIM UNKNOWN
+ BRA TOKE85
+TOK145
+ BRA TOKE20 ;Chained branch
+;
+; Now check for two character operators:- <=, >=, <>, /=
+;
+TOK160
+ PHA
+ LDAIY LINEPTR
+ TAX
+ PLA
+ CMPIM SLASH
+ BEQ TOK210 ;Branch if possible /=
+ CMPIM GREA
+ BEQ TOK200 ;Branch if possible >=
+ CMPIM LESS
+TOK165
+ BNE TOK145 ;Branch if not < (chained branch)
+;
+; Here we have a possible <=, <>
+;
+ CPXIM ">"
+ BNE TOK190
+TOK170
+ LDAIM NEQ
+TOK180
+ INY ;Past rest of token
+ BRA TOK145
+TOK190
+ CPXIM "="
+ BNE TOK165 ;Branch if not <=
+ LDAIM LEQ
+ BRA TOK180
+TOK200
+ CPXIM "="
+ BNE TOK165
+ LDAIM GREQ
+ BRA TOK180
+TOK210
+ CPXIM "="
+ BNE TOK165
+ BRA TOK170 ;/= = <>
+;
+; ======
+; TOKSTR
+; ======
+;
+; Tokenise a string
+;
+; ENTRY:- Y points to rest of line
+;
+; EXIT:-  C = 1 <=> Good string
+;         Y points to rest of line
+;         CHARPTR points to start of string
+;         A, X, P corrupt
+;
+TOKSTR
+ STY CHARPTR
+ CLR TVLEN
+ CLR TVTYPE
+ [ MANSTR /= 0
+ ! 0,"MANSTR not zero"
+ ]
+TOKS10
+ LDAIY LINEPTR ;Get next character
+ INY ;Past it
+ CMPIM """" ;See if escape or end of string
+ BEQ TOKS30 ;Branch if end or escape
+ CMPIM CR
+ BEQ TOKS40 ;Branch if EOL
+TOKS20
+ INC TVLEN ;One more character in the string
+ BPL TOKS10 ;Branch if string not too long
+TOKS40
+ CLC ;Return bad
+ RTS
+TOKS30
+ LDAIY LINEPTR
+ INY
+ CMPIM """"
+ BEQ TOKS20 ;Continue if escape sequence
+ DEY ;Point just past terminator
+ SEC
+ RTS ;Return good
+;
+; ======
+; TOKVAR
+; ======
+;
+; Tokenise a variable symbol
+;
+; ENTRY:- Symbol in SYMBOL
+;         V = 0
+;         CHARPTR points to rest of line
+;
+; EXIT:-  C = 1 <=> Good symbol
+;         Y = type
+;         A, X, P corrupt
+;
+TOKVAR
+ JSR LVLOOK ;See if a local variable (LVLOOK knows about macro depth)
+ BCC TOKV10 ;Branch if not
+ JSR LSYMB ;Look up in global table
+ BRA TOKV20
+TOKV10
+ SEC ;Don't insert symbol
+ JSR VSYMB ;Look it up
+ BCC TOKV30 ;Branch if not there
+ SEC
+TOKV20
+ LDAIY SYMPT ;Get symbol type
+ ANDIM &60 ;Remove global/local bit and macro depth bits
+ LDYIM SYMSTR ;Assume string type
+ CMPIM STRING
+ BEQ TOKV30 ;Branch if so
+ LDYIM SYMARITH
+ CMPIM ARITHM
+ BEQ TOKV30
+ DEY ;Y := SYMLOG, C = 1
+TOKV30
+ RTS
+;
+; End of expression evaluation routines file
+;
+ LNK MASM20

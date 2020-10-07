@@ -1,0 +1,267 @@
+ TTL Macro assembler - stacking and unstacking routines -> MASM09
+ OPT MASM09
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; =======
+; ONWHILE
+; =======
+;
+; Add a WHILE token to the software stack
+; Tells MSTACK if expanding a macro
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+ONWH20
+ BRK
+ = STOVER,"Stack overflow",&00
+ONWHILE
+ PHP
+ PHA
+ PHY
+ PHX
+ LDA STAPTR
+ TAY
+ CLC
+ ADCIM 5 ;5 bytes required
+ BCS ONWH20 ;Branch if stack overflow
+ STA STAPTR
+ LDA LPTR
+ STAAY STACK
+ LDA LPTR+1
+ STAAY STACK+1
+ LDA LNNUM
+ STAAY STACK+2
+ LDA LNNUM+1
+ STAAY STACK+3 ;Stack line number
+ LDAIM SWHIL
+ STAAY STACK+4 ;Stack type byte
+ LDA MDEPTH ;See if in a macro
+ BEQ ONMA20 ;Branch if not
+ JSR SW ;Tell MSTACK
+ BRA ONMA20 ;Restore all registers and flags
+;
+; =======
+; ONMACRO
+; =======
+;
+; Add a macro token to the stack
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+ONMACRO
+ PHP
+ PHA
+ PHY
+ PHX
+ LDY STAPTR
+ TYA
+ CLC
+ ADCIM 9
+ BCS ONWH20 ;Branch if stack overflow
+ STA STAPTR
+ LDXIM -6
+ONMA10
+ LDAAX MACNAME+6
+ STAAY STACK ;Save opcode name
+ INY
+ INX
+ BNE ONMA10 ;Loop till all copied
+ LDA LNNUM
+ STAAY STACK
+ LDA LNNUM+1
+ STAAY STACK+1 ;Preserve line number
+ LDAIM SMACR
+ STAAY STACK+2 ;And type byte
+ONMA20
+ BRA OFFW20 ;Restore all registers and flags
+;
+; ======
+; ONCOND
+; ======
+;
+; Add a macro token to the stack
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+ONCOND
+ PHP
+ PHA
+ PHY
+ LDAIM SCOND
+ LDY STAPTR
+ INC STAPTR
+ BEQ ONWH20 ;Branch if overflow
+ STAAY STACK
+ BRA OFFW25
+;
+; ======
+; KWHILE
+; ======
+;
+; Remove a WHILE token from the stack, without returning
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+KWHILE
+ PHP
+ PHA
+ PHY
+ PHX
+ LDY STAPTR
+ LDAAY STACK-1 ;Get top token
+ CMPIM SWHIL ;Check type
+ BNE OFFW30 ;Branch if wrong
+ TYA
+ SBCIM 5
+ STA STAPTR
+ BCC OFFW40 ;Branch if underflow
+ LDA MDEPTH
+ BEQ OFFW20 ;Branch if not in macro
+ JSR KW ;Tell MSTACK to remove WHILE token
+ BRA OFFW20
+;
+; ========
+; OFFWHILE
+; ========
+;
+; Remove a WHILE token from the stack
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+OFFWHILE
+ PHP
+ PHA
+ PHY
+ PHX
+ LDY STAPTR
+ LDAAY STACK-1 ;Get top token
+ CMPIM SWHIL ;Check type
+ BNE OFFW30 ;Branch if wrong
+ TYA
+ SBCIM 5
+ STA STAPTR
+ BCC OFFW40 ;Branch if underflow
+ SED
+ CLC
+ LDAAY STACK-3
+ SBCIM 0
+ STA LNNUM
+ LDAAY STACK-2
+ SBCIM 0
+ STA LNNUM+1 ;Restore line number (GETLINE will update it)
+ CLD
+ LDA MDEPTH
+ BNE OFFW10 ;Branch if macro expanding
+ LDAAY STACK-4
+ STA LPTR+1
+ LDAAY STACK-5
+ STA LPTR ;Restore line pointer
+ BRA OFFW20
+OFFW10
+ JSR RW ;Tell MSTACK
+OFFW20
+ PLX
+OFFW25
+ PLY
+ PLA
+ PLP
+ RTS
+OFFW30
+ BRK
+ = STERR,"Bad nesting"
+OFFW40
+ BRK
+ = ASMERR,"Stack underflow",&00
+;
+; ========
+; OFFMACRO
+; ========
+;
+; Remove a MACRO token from the stack
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+OFFMACRO
+ PHP
+ PHA
+ PHY
+ LDAIM SMACR ;Expected token
+ LDY STAPTR
+ CMPAY STACK-1 ;Check type
+ BNE OFFW30 ;Branch if type mismatch
+ TYA
+ SBCIM 9
+ BCC OFFW40 ;Branch if underflow
+ STA STAPTR
+ LDAAY STACK-2
+ STA LNNUM+1
+ LDAAY STACK-3
+ STA LNNUM ;Restore line number
+ BRA OFFW25
+;
+; =======
+; OFFCOND
+; =======
+;
+; Remove a Conditional token from the stack
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers and flags preserved
+;
+OFFCOND
+ PHP
+ PHA
+ PHY
+ LDY STAPTR
+ LDAAY STACK-1 ;Check token type
+ ASSERT SCOND=0
+ BNE OFFW30 ;Branch if incorrect
+ DEY
+ STY STAPTR ;Save new pointer
+ INY
+ BEQ OFFW40 ; Branch if underflow
+ BRA OFFW25 ;Exit
+;
+; =======
+; STCHECK
+; =======
+;
+; Check not in unclosed conditional at END/LNK
+;
+; ENTRY:- Irrelevant
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+STCHECK
+ LDA STAPTR
+ BEQ STCH10 ;Branch if not
+ JSR MESSAGE
+ = "Warning, unmatched conditional",!SPACE
+ PHY
+ JSR LINFIL
+ PLY
+STCH10
+ RTS
+;
+; End of stacking and unstacking routines file
+;
+ LNK MASM10

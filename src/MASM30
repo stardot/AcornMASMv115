@@ -1,0 +1,740 @@
+ TTL Macro assembler - Macro storage routines -> MASM30
+ OPT MASM30
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+;  =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; The macro tables have here been moved to the second
+; processor side.They start at the top of the global symbol table
+; and extends up to HIMEM
+; MSTACK is probably unecessary as the information is also held 
+; in STACK
+;
+; ======
+; COLDST
+; ======
+;
+; Cold start is as good a name as any for initialisation of MACROS
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+COLDST
+ LDAIM &84 ; Read HIMEM
+ JSR OSBYTE
+ STA HIMEM+1
+ STA XMACNME
+ STY HIMEM
+ STY MACNME+1 ;Empty table of macro names
+ LDXIM 0
+ STX MACSTART
+ STX MACNME
+ LDAIM /SYMEHI
+ STA XMACSTART ;Start macro definitions at a sensible place
+ LDAIM SYMEHI
+ STA MACSTART+1
+ STX CONSIST ;Mark tables consistent
+ STX MACDEV ;No current macro definition
+ STX MSTPTR ;Empty stack
+ LDAIM &7F ;Incrementing counter of macro depth
+ STA MACIND ;No current macro expansion
+ RTS
+;
+; ======
+; MGLINE
+; ======
+;
+; Get next line from current macro expansion
+;
+; ENTRY:- MACLNE points to line to be sent
+;         MACIND indicates whether there is a line to be sent
+;
+; EXIT:-  MACLNE updated
+;
+MGLINE
+ BIT MACIND
+ BPL MGLI50 ;Branch if not expanding any macro now
+ LDA MACLEN
+ ORA MACLEN+1
+ BEQ MGLI50 ;Branch if current expansion exhausted (assembler error)
+ LDA XMACLNE
+ STA XCURLINE
+ LDA MACLNE+1
+ STA CURLINE+1 ;Preserve for possible while
+ LDA MACLNE
+ STA CURLINE
+ LDA MACLEN+1
+ STA CURLEN+1 ;Preserve for possible while
+ LDA MACLEN
+ STA CURLEN
+ LDYIM 0
+MGLI10
+ LDAIY MACLNE
+ STAAY MACLINE ;Transfer results out
+ INY
+ LDX MACLEN
+ BNE MGLI20
+ DEC MACLEN+1
+MGLI20
+ DEC MACLEN
+ CMPIM CR ;See if at end of line
+ BNE MGLI10
+ CLC
+ TYA
+ ADC MACLNE
+ STA MACLNE
+ BCC MGLI40
+ INC MACLNE+1
+ BNE MGLI40
+ INC XMACLNE
+MGLI40
+ RTS ;Return to pass back parameters
+MGLI50
+ BRK
+ = ASMERR,"Asm error",0
+ LDAIM ASMERR ;No current macro expansion
+RETRB
+ STA RETVAL
+ RTS ;Return bad
+;
+; ======
+; EXPEND
+; ======
+;
+; End current macro expansion
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  MACIND reset
+;
+EXPEND
+ BIT MACIND
+ BPL EXPE20 ;Branch if no current macro expansion
+ LDY MSTPTR
+ TYA
+ SEC
+ SBCIM FRAME ;Check not underflowing
+ BCC EXPE10 ;Branch if we are
+ STA MSTPTR
+ LDAAY MSTACK-1
+ BPL EXPE10 ;Branch if not MACRO
+ LDAAY MSTACK-2
+ STA MACLEN+1
+ LDAAY MSTACK-3
+ STA MACLEN
+ LDAAY MSTACK-4
+ STA XMACLNE
+ LDAAY MSTACK-5
+ STA MACLNE+1
+ LDAAY MSTACK-6
+ STA MACLNE
+ DEC MACIND ;One level down in macros
+ RTS
+EXPE10
+ BRK
+ = ASMERR,"Host stack error"
+EXPE20
+ BRK
+ = ASMERR,&80,"macro end",&00
+;
+; ======
+; EXPMAC
+; ======
+;
+; Expand given opcode as a macro
+;
+; ENTRY:- Opcode pointed to by SYMBOL
+;
+; EXIT:-  MACIND, MACLNE, MACLEN reset
+;         Top bit set in RETVAL <=> symbol not found
+;
+EXPM01
+ JMP RETRB
+EXPM10
+ BRK
+ = ASMERR,"Inconsistent macro tables",&00
+EXPMAC
+ BIT CONSIST
+ BMI EXPM10 ;Branch if inconsistent tables
+ JSR LOOK ;Look for the symbol
+ RORA
+ BMI EXPM01
+ LDAIM MMACRO
+ JSR ONSTACK ;Attempt to stack current information
+;
+; Now found the symbol
+;
+ LDAIY MACPTER
+ STA MACLNE
+ PHA
+ INY
+ LDAIY MACPTER ;Get pointer to macro block
+ STA MACLNE+1
+ STA DEFBLK+1
+ INY
+ LDAIY MACPTER
+ STA XMACLNE
+ STA XDEFBLK
+ PLA
+ CLC
+ ADCIM 2
+ STA DEFBLK
+ BCC EXPM30
+ INC DEFBLK+1 ;Pointer to default parameter values block
+ BNE EXPM30
+ INC XDEFBLK
+EXPM30
+ LDYIM 0
+ LDAIY DEFBLK ;Get block length
+ CLC
+ ADC DEFBLK
+ STA LOCBLK
+ LDA DEFBLK+1
+ ADCIM 0
+ STA LOCBLK+1 ;Pointer to local variable block
+ LDA XDEFBLK
+ ADCIM 0
+ STA XLOCBLK
+ CLC
+ LDAIY LOCBLK
+ ADC LOCBLK
+ PHA
+ TAX
+ LDA LOCBLK+1
+ ADCIM 0
+ PHA
+ STA REG
+ LDA XLOCBLK
+ ADCIM 0
+ PHA  ;Get pointer to macro text
+ SEC
+ SBC XMACLNE
+ LDA REG
+ SBC MACLNE+1
+ STA MACLEN+1
+ TXA
+ SBC MACLNE ;Now got length of non-text portion
+ STA MACLEN ;Note C = 1 here
+ LDAIY MACLNE
+ SBC MACLEN
+ STA MACLEN
+ INY
+ LDAIY MACLNE
+ SBC MACLEN+1
+ STA MACLEN+1 ;Length of macro text
+ PLA
+ STA XMACLNE
+ PLA
+ STA MACLNE+1
+ PLA
+ STA MACLNE ;Pointer to first line of macro text
+ INC MACIND ;Indicate macro depth
+ LDAIM 0
+EXPM50
+ JMP RETRB
+;
+; =====
+; DTGET
+; =====
+;
+; Get default table for the current macro expansion
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No conditions
+;
+DTGET
+ LDYIM 127
+ BIT MACIND
+ BPL DTGE20 ;Branch if no current expansion
+DTGE05
+ LDAIY DEFBLK
+ STAAY DEFTAB
+ DEY
+ BPL DTGE05
+ LDA DEFBLK
+ EORIM &80
+ STA DEFBLK ;Add 128
+ BMI DTGE10 ;Branch if good add
+ INC DEFBLK+1 ;Else up high pointer
+ BNE DTGE10
+ INC XDEFBLK
+DTGE10
+ RTS
+DTGE20
+ LDAIM 0
+ JMP RETRB ;Exit bad
+;
+; =====
+; PTGET
+; =====
+;
+; Get parameter table for the current macro expansion
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No conditions
+;
+PTGET
+ LDYIM 127
+ BIT MACIND
+ BPL DTGE20 ;Branch if no current expansion
+PTGE05
+ LDAIY LOCBLK
+ STAAY PARMTAB
+ DEY
+ BPL PTGE05
+ LDA LOCBLK
+ EORIM &80
+ STA LOCBLK ;Add 128
+ BMI PTGE10 ;Branch if good add
+ INC LOCBLK+1 ;Else up high pointer
+ BNE PTGE10
+ INC XLOCBLK
+PTGE10
+ RTS
+;
+; ======
+; DEFMAC
+; ======
+;
+; Attempt to define a name as a macro
+;
+; ENTRY:- SYMBOL points to symbol
+;
+; EXIT:-  RETVAL = 0 => o.k.
+;                = 1 => table full
+;                > 1 => macro already exists
+;         If successful
+;         NAMPTR points to name in table
+;         MACSTART points to start of macro block
+;         DEFBLK points to where to put default block
+;         MACDEV < 0 (=> macro definition in progress)
+;
+DEFMAC
+ JSR LOOK ;See if macro name exists
+ BCS DEFM10 ;Branch if not
+ LDAIM MACALR
+DEFM05
+ JMP RETRB ;Exit
+DEFM10
+ LDA MACNME
+ STA SPTR
+ SBCIM 9 ;Note C was 1
+ STA NAMPTR
+ TAX ;Preserve for later
+ LDA MACNME+1
+ STA SPTR+1
+ SBCIM 0
+ STA NAMPTR+1 ;Point to new start of table
+ TAY ;Preserve for later
+ LDA XMACNME
+ STA XSPTR
+ SBCIM 0
+ STA XNAMPTR
+ PHA
+;
+; Now check got some room in table
+;
+ LDA MACSTART
+ CMP NAMPTR
+ LDA MACSTART+1
+ SBC NAMPTR+1
+ LDA XMACSTART
+ SBC XNAMPTR
+ PLA
+ BCC DEFM20 ;Branch if got room
+ LDAIM 1
+ BCS DEFM05 ;Branch always to error exit
+DEFM20
+ STA XMACNME
+ STX MACNME ;New start of macro name table
+ STY MACNME+1
+;
+; Now shuffle down table
+;
+DEFM30
+ LDA SPTR
+ CMP MACPTER
+ BNE DEFM40 ;Branch if not finished copying
+ LDA SPTR+1
+ CMP MACPTER+1
+ BNE DEFM40 ;Branch if not finished copying
+ LDA XSPTR
+ CMP XMACPTER
+ BEQ DEFM60 ;Branch if finished
+DEFM40
+ LDYIM 0
+ LDAIY SPTR
+ STAIY NAMPTR ;Shuffle down table
+;
+; Now increment pointers
+;
+ INC SPTR
+ BNE DEFM50
+ INC SPTR+1
+ BNE DEFM50
+ INC XSPTR
+DEFM50
+ INC NAMPTR
+ BNE DEFM30
+ INC NAMPTR+1
+ BNE DEFM30
+ INC XNAMPTR
+ BNE DEFM30 ;Branch always to continue loop
+DEFM60
+;
+; Now insert symbol and value
+;
+ LDYIM 8
+ LDA XMACSTART
+ STAIY NAMPTR
+ DEY
+ LDA MACSTART+1
+ STAIY NAMPTR
+ DEY
+ LDA MACSTART
+ STAIY NAMPTR
+ DEY ;Y := 5
+DEFM70
+ LDAAY SYMBOL
+ STAIY NAMPTR
+ DEY
+ BPL DEFM70 ;Loop till symbol copied in
+ ORAIM &80
+ INY
+ STAIY NAMPTR ;Set top bit of first character
+ STA CONSIST ;Indicate macro definition table inconsistent (top bit set)
+ CLC
+ LDA MACSTART
+ ADCIM 2
+ STA DEFBLK
+ LDA MACSTART+1
+ ADCIM 0
+ STA DEFBLK+1
+ LDA XMACSTART
+ ADCIM 0
+ STA XDEFBLK ;Set up default block pointer
+ CMP XMACNME
+ BNE DEFM80
+ LDA DEFBLK+1
+ CMP MACNME+1
+ BNE DEFM80
+ LDA DEFBLK
+ CMP MACNME
+DEFM80
+ LDAIM 1
+ BCS DEFM95 ;Branch if overflowing
+ SEC
+ ROR MACDEV ;Defining a macro
+ LDAIM 0
+DEFM95
+ JMP RETRB ;Return o.k.
+DEFM99
+ LDAIM 1
+ BNE DEFM95
+;
+; ====
+; DMAC
+; ====
+;
+; Store a macro default block
+;
+; ENTRY:- DEFBLK assumed set up
+;         DEFTAB holds table
+;
+; EXIT:-  DEFBLK updated
+;         LOCBLK set up
+;         RETVAL = 0 => o.k.
+;                = 1 => assembler error
+;                > 1 => block overflow
+;
+DMAC
+ BIT MACDEV
+ BPL DEFM99 ;Branch if not definiing a macro
+ LDYIM 0
+ LDAAY DEFTAB ;Get number of bytes to receive
+ TAY ;Count amount in y
+ DEY
+;
+; First see if block will fit
+;
+ CLC
+ ADC DEFBLK
+ TAX
+ LDAIM 0
+ ADC DEFBLK+1
+ STA REG
+ LDA XDEFBLK
+ ADCIM 0
+ PHA
+ CPX MACNME
+ LDA REG
+ SBC MACNME+1
+ PLA
+ PHA
+ SBC XMACNME
+ BCS PMAC50 ;Branch if no room
+;
+; Now copy in block
+;
+DMAC30
+ LDAAY DEFTAB
+ STAIY DEFBLK ;Copy across
+ DEY
+ BPL DMAC30 ;Loop till all done
+ PLA
+ STA XDEFBLK
+ STA XLOCBLK
+ LDA REG
+ STA DEFBLK+1
+ STA LOCBLK+1
+ STX DEFBLK
+ STX LOCBLK ;New pointers
+ BCC PMAC35 ;Branch always to exit o.k.
+;
+; ====
+; PMAC
+; ====
+;
+; Store a macro parameter and local variable block
+;
+; ENTRY:- LOCBLK assumed set up
+;
+; EXIT:-  LOCBLK updated
+;         MACLNE set up
+;         RETVAL = 0 => o.k.
+;                = 1 => assembler error
+;                > 1 => block overflow
+;
+PMAC
+ BIT MACDEV
+ BPL PMAC60 ;Branch if not defining a macro
+ LDYIM 0
+ LDAAY PARMTAB ;Get number of bytes to receive
+ TAY ;Count amount in Y
+ DEY
+;
+; First see if block will fit
+;
+ CLC
+ ADC LOCBLK
+ TAX
+ LDAIM 0
+ ADC LOCBLK+1
+ STA REG
+ LDAIM 0
+ ADC XLOCBLK
+ PHA
+ CPX MACNME
+ LDA REG
+ SBC MACNME+1
+ PLA
+ PHA
+ SBC XMACNME
+ BCS PMAC50 ;Branch if no room
+;
+; Now copy in block
+;
+PMAC30
+ LDAAY PARMTAB
+ STAIY LOCBLK ;Copy across
+ DEY
+ BPL PMAC30 ;Loop till all done
+ PLA
+ STA XMACLNE
+ STA XLOCBLK
+ LDA REG
+ STA MACLNE+1
+ STA LOCBLK+1
+ STX MACLNE
+ STX LOCBLK ;New pointers
+PMAC35
+ LDAIM 0 ;Good exit
+PMAC40
+ JMP RETRB
+PMAC50
+ PLA ;Stack straight
+ LDAIM 2
+ BNE PMAC40 ;Exit run out of room
+PMAC60
+ LDAIM 1 ;Exit assembler error
+ BNE PMAC40
+;
+; ====
+; LMAC
+; ====
+;
+; Store a new line of a macro definition
+;
+; ENTRY:- MACLNE assumed set up
+;
+; EXIT:-  MACLNE updated
+;         RETVAL = 0 => o.k.
+;                = 1 => assembler error
+;                > 1 => block overflow
+;
+LMAC
+ BIT MACDEV
+ BPL PMAC60 ;Branch if not in a macro definition
+;
+; First find out length of line
+;
+ LDYIM 0
+LMAC10
+ LDAIY LPTR
+ INY
+ CMPIM CR
+ BNE LMAC10 ;Loop till end of line
+;
+; Now see if we have room for this line
+;
+ TYA
+ CLC
+ ADC MACLNE
+ TAX
+ LDAIM 0
+ ADC MACLNE+1
+ STA REG
+ LDAIM 0
+ ADC XMACLNE
+ PHA
+ CPX MACNME
+ LDA REG
+ SBC MACNME+1
+ PLA
+ PHA
+ SBC XMACNME ;Check if room
+ BCS PMAC50 ;Branch if not
+ DEY
+;
+; Now copy in line
+;
+LMAC20
+ LDAIY LPTR
+ STAIY MACLNE
+ DEY
+ BPL LMAC20 ;Loop till all copied
+ PLA
+ STA XMACLNE
+ LDA REG
+ STA MACLNE+1
+ STX MACLNE ;Update line pointer
+ BCC PMAC35 ;Branch always to finish off
+;
+; ====
+; EMAC
+; ====
+;
+; End the current macro definition
+;
+; ENTRY:- MACLNE assumed set up
+;
+; EXIT:-  MACSTART updated
+;         RETVAL = 0 => o.k.
+;                = 1 => assembler error
+;
+EMAC
+ BIT MACDEV
+ BPL PMAC60 ;Branch if no current macro definition
+ LDYIM 0
+ LDAIY NAMPTR ;Get first character of macro name
+ EORIM &80 ;Unset top bit
+ STAIY NAMPTR ;Restore
+ LSR CONSIST ;Set table consistent again
+ LSR MACDEV ;No longer defining a macro
+ LDA MACLNE
+ PHA
+ SEC
+ SBC MACSTART
+ TAX
+ LDA MACLNE+1
+ PHA
+ SBC MACSTART+1 ;Get length of macro block
+ INY ;Y := 1
+ STAIY MACSTART
+ DEY
+ TXA
+ STAIY MACSTART ;Write in length of block
+ LDA XMACLNE
+ STA XMACSTART
+ PLA
+ STA MACSTART+1
+ PLA
+ STA MACSTART ;New end of table
+ LDAIM 0
+ BEQ PMAC40 ;Branch always to exit o.k.
+;
+; ==
+; SW
+; ==
+;
+; Mark start of while loop
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;
+SW
+ LDAIM MWHILE
+ JMP ONSTACK ;Attempt to stack information
+;
+; ==
+; RW
+; ==
+;
+; Return to start of while loop
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;
+RW
+ JSR KW
+ LDAAY MSTACK-2
+ STA MACLEN+1
+ LDAAY MSTACK-3
+ STA MACLEN
+ LDAAY MSTACK-4
+ STA XMACLNE
+ LDAAY MSTACK-5
+ STA MACLNE+1
+ LDAAY MSTACK-6
+ STA MACLNE ;Point to last line
+RW20
+ RTS ;Exit good
+;
+; ==
+; KW
+; ==
+;
+; Remove WHILE token
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;         Y points to stack
+;
+KW
+ LDY MSTPTR
+ TYA
+ SEC
+ SBCIM FRAME
+ BCC RW10 ;Branch if underflow
+ STA MSTPTR
+ LDAAY MSTACK-1
+ BEQ RW20 ;Branch if correct entry type
+ [ MWHILE=0
+ |
+ ! 0,"MWHILE not zero"
+ ]
+RW10
+ JMP EXPE10 ;Give up with error
+;
+; End of utilities part 1 file
+;
+ LNK MASM31

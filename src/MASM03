@@ -1,0 +1,594 @@
+        TTL     > Masm03 - Macro assembler - message and error handling
+        OPT     MASM03
+
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+
+
+; BRK handling routine
+; The BRK is followed by an argument byte (error code)
+; followed by a message, terminated by a zero
+;
+
+BRKHAND ROUT
+
+ LDXIM &FF
+ TXS ;Reset stack level
+ JSR CLOSEX
+
+ LDYIM 1
+10BRKHAND
+ LDAIY ERRPTR
+ BEQ #20BRKHAND ;Branch if end of message
+ BPL #15BRKHAND
+
+ JSR MESSAGE
+ = "Ba",!"d"
+ LDAIM SPACE
+
+15BRKHAND
+ JSR CHARPRINT
+ INY
+ BNE #10BRKHAND ;Next character
+
+20BRKHAND
+ JSR NEWLPRINT ;Terminate line
+ JSR LINFIL ;Give line number and file name
+ CLR INTEXT ;No longer processing text
+ BIT STOP ;See if stop on error
+ BPL #40BRKHAND ;Branch if not
+ JMP STOPPOLL
+
+40BRKHAND
+ JMP COMMAND ;Return to command level
+
+
+; ======
+; CLOSEX
+; ======
+;
+; Close the XREF file if necessary
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X preserved
+;         A, Y, P corrupt
+;
+
+CLOSEX
+ LDY HANDLE ;See if got a cross-reference file
+ BEQ ERRO70 ;Branch if not
+ LDAIM 0
+ CLR HANDLE
+ JMP OSFIND ;Close it
+
+EUNDSYMB
+ LDYIM UNDSYMB
+
+; Fall through to ERROR
+
+
+; =====
+; ERROR
+; =====
+;
+; Generate error messages
+;
+; ENTRY:- Y = error number
+;
+; EXIT:-  All registers and flags preserved
+;
+
+ERROR ROUT
+
+ PHP
+ PHA
+ PHX
+ PHY
+ TYA
+ TAX
+ LDYIM 0
+ LDAIM ERRBUFF
+ STA ERRTAB
+ LDAIM /ERRBUFF
+ STA ERRTAB+1
+10ERROR
+ DEX ;Have we found the right message yet?
+ BEQ #50ERROR ;Branch if so
+20ERROR
+ LDAIY ERRTAB ;Look at next character of message
+ BMI #30ERROR ;Branch if end of message
+ INY
+ BNE #20ERROR
+ INC ERRTAB+1
+ BNE #20ERROR ;On to next character of error message
+30ERROR
+ INY
+ BNE #10ERROR
+ INC ERRTAB+1 ;Skip terminator
+ BRA #10ERROR ;Try next message
+
+50ERROR
+ LDAIY ERRTAB
+ PHA
+ ANDIM &7F
+ CMPIM &7F
+ BNE #55ERROR
+
+ JSR MESSAGE
+ = "Ba",!"d"
+ LDAIM SPACE
+
+55ERROR
+ JSR CHARPRINT
+ PLA
+ BMI #60ERROR ;Branch if end of message
+ INY
+ BNE #50ERROR
+ INC ERRTAB+1
+ BNE #50ERROR ;Loop
+60ERROR
+ JSR PSPACE ;Add a space to end of message
+ JSR LINFIL ;Give line number and file name,and C=1
+ ROR ERRSW ;Set error pending
+ LDXIM ERRORS
+ JSR INCDEC ;Increment number of errors
+ PLY
+ PLX
+ PLA
+ PLP
+ERRO70
+ RTS
+
+ERRBUFF
+ = "Line too lon",!"g"
+ = "Expansion line too lon",!"g"
+ = "End of line missin",!"g"
+ = &7F,"local label numbe",!"r"
+ = &7F,"routine nam",!"e"
+ = &7F,"opcod",!"e"
+ = &7F,"labe",!"l"
+ = "Label already define",!"d"
+ = "Syntax erro",!"r"
+ = &7F,"directive us",!"e"
+ = "Doubly defined variabl",!"e"
+ = "No current macr",!"o"
+ = "Too late for LCL directiv",!"e"
+ = &7F,"operan",!"d"
+ = &7F,"operato",!"r"
+ = "Badly defined manifest symbo",!"l"
+ = "Type mismatc",!"h"
+ = "Division by zer",!"o"
+ = &7F,"string length reques",!"t"
+ = "Undefined symbo",!"l"
+ = " out of rang",!"e"
+ = &7F,"zero page valu",!"e"
+ = "Too late for OR",!"G"
+ = "Missing ",!"["
+ = "Missing WHIL",!"E"
+ = &7F,"drive numbe",!"r"
+ = "Too late to change CP",!"U"
+ = "Unknown variable symbo",!"l"
+ = &7F,"OP",!"T"
+ = &7F,"JM",!"I"
+
+
+; =======
+; MESSAGE
+; =======
+;
+; Print a message terminated by a top bit set character using CHARPRINT
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+MESSAGE
+ PLA
+ STA MESPTR
+ PLA
+ STA MESPTR+1
+ JSR MSUB ;Print the message
+ LDA MESPTR+1
+ PHA
+ LDA MESPTR
+ PHA
+MESS10
+ RTS
+
+
+; ======
+; LINFIL
+; ======
+;
+; Give line number and file name of error
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  All registers corrupt
+;         C=1
+;
+
+LINFIL ROUT
+
+ BIT INTEXT
+ BPL MESS10 ;Branch if not in text
+ LDY MDEPTH
+ LDX STAPTR
+ JSR MATLINE
+ JSR LNPRINT ;Give the line number in decimal
+10LINFIL
+ TYA
+ BEQ #50LINFIL ;Branch if not in macro
+ TXA
+ BEQ #70LINFIL ;Branch if nothing on stack
+ LDAAX STACK-1 ;Get type
+ CMPIM SWHIL
+ BEQ #40LINFIL ;Branch if WHILE
+ BCC #30LINFIL ;Branch if COND
+ ASSERT SCOND<SWHIL:LAND:SWHIL<SMACR
+ TXA
+ SBCIM 9
+ BCC #70LINFIL ;Branch if underflow
+ TAX
+ LDAAX STACK+6
+ PHA ;Line number low
+ LDAAX STACK+7
+ PHA ;Line number high
+
+ JSR MESSAGE
+ = " in macro",!SPACE
+ PHX
+ PHY
+ LDYIM 5
+20LINFIL
+ LDAAX STACK
+ JSR CHARPRINT ;Write out macro name
+ INX
+ DEY
+ BPL #20LINFIL
+ JSR NEWLPRINT
+ JSR MATLINE
+ PLY
+ PLX
+ PLA
+ JSR HEXPRINT
+ PLA
+ JSR HEXP ;Give line number
+ DEY
+ BRA #10LINFIL ;And loop
+30LINFIL
+ DEX ;Stack down 1 for SCOND
+ BCC #10LINFIL ;Loop
+40LINFIL
+ TXA
+ SEC
+ SBCIM 5
+ BCC #70LINFIL
+ TAX
+ BCS #10LINFIL ;Loop
+
+50LINFIL
+ JSR MESSAGE
+ = " in file",!SPACE
+
+ LDXIM 0
+60LINFIL
+ LDYAX CURFILE
+ TYA
+ JSR CHARPRINT
+ INX
+ CPYIM CR
+ BNE #60LINFIL ;Print till CR
+65LINFIL
+ RTS
+
+70LINFIL
+ CLR INTEXT ;No longer in text
+
+ BRK
+ = STFAULT,"Stack fault",0
+
+MATLINE
+ JSR MESSAGE
+ = "at line",!SPACE
+ RTS
+
+
+; ====
+; MSUB
+; ====
+;
+; Print a message from store
+;
+; ENTRY:- MESPTR points to message
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+MSUB ROUT
+
+ PHY ;Preserve Y
+ LDYIM 1
+10MSUB
+ LDAIY MESPTR
+ PHA
+ ANDIM &7F ;Remove possible top bit
+ JSR CHARPRINT
+ INC MESPTR
+ BNE #20MSUB
+ INC MESPTR+1
+20MSUB
+ PLA
+ BPL #10MSUB ;Branch if not at end of message
+ PLY ;Preserve Y
+ RTS
+
+
+; =====
+; OMESS
+; =====
+;
+; Print an inline message terminated by a top bit set character using OSASCI
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+OMESS ROUT
+
+        PLA
+        STA     MESPT1
+        PLA
+        STA     MESPT1+1
+
+10      INC     MESPT1
+        BNE     #15
+        INC     MESPT1+1
+15      LDAI    MESPT1
+        PHP
+        ANDIM   &7F
+        JSR     OSASCI
+        PLP
+        BPL     #10
+
+        LDA     MESPT1+1
+        PHA
+        LDA     MESPT1
+        PHA
+        RTS
+
+
+; ======
+; INCDEC
+; ======
+;
+; Increment a two byte BCD number in zero page
+;
+; ENTRY:- X points number
+;
+; EXIT:-  Y preserved
+;         X updated by 1
+;         A corrupt
+;         D set
+;
+
+INCDEC ROUT
+
+ SEC
+ JSR #10INCDEC
+ INX
+10INCDEC
+ SED
+ LDAAX  0
+ ADCIM  0
+ STAAX  0
+ CLD ;Ensure normal arithmetic
+INCD10
+ RTS
+
+
+; =====
+; FIELD
+; =====
+;
+; Print the label or opcode field
+;
+; ENTRY:- X = maximum length
+;         Y = current position
+;
+; EXIT:-  Y updated
+;
+
+FIELD ROUT
+
+ JSR COMCHK ;See if already at comment
+ BCS #20FIELD ;Branch if so
+ CMPIM SPACE
+ BEQ #20FIELD ;Branch if end of field
+ INY ;On to next character
+ DEX
+ BMI #10FIELD ;Don't print if field too big
+ JSR CHARPRINT
+ DEX
+10FIELD
+ INX
+ BPL FIELD ;Branch always
+20FIELD
+ STX COLUMN ; Fall through to SPCPAD
+
+
+; ======
+; SPCPAD
+; ======
+;
+; Pad out code field
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  A, P corrupt
+;         X, Y preserved
+;
+
+SPCPAD
+ BIT COLUMN
+ BMI INCD10
+ JSR PSPACE ;Pad
+ BRA SPCPAD
+
+
+; =======
+; PTPGNUM
+; =======
+;
+; Print the page number, zero suppressed
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+PTPGNUM ROUT
+
+ LDA PGNUM+1
+ BIT FF
+ JSR #10PTPGNUM
+ LDA PGNUM
+10PTPGNUM
+ PHA
+ LSRA
+ LSRA
+ LSRA
+ LSRA ;Get top nibble
+ JSR #20PTPGNUM ;Print the digit
+ PLA
+ ANDIM &F ;Get bottom nibble
+20PTPGNUM
+ BEQ #30PTPGNUM
+ CLV ;Stop suppressing if non-zero
+30PTPGNUM
+ JSR HEXDIG
+ PHP
+ CMPIM &30
+ BNE #40PTPGNUM ;Branch if not 0
+ BVS #50PTPGNUM ;Branch if zero suppresing
+40PTPGNUM
+ JSR OSASCI ;Print
+50PTPGNUM
+ PLP ;Preserve V
+ RTS
+
+
+; ========
+; HEXPRINT
+; ========
+;
+; Print a zero suppressed BCD number
+;
+; ENTRY:- A = number
+;         V = 1 <=> zero suppressing (HEXP only)
+;
+; EXIT:-  X, Y preserved
+;         A corrupt
+;         V = 0 if no longer suppressing
+;
+
+HEXPRINT
+ BIT FF ;Suppress to start with
+ BVS HEXP ;Branch always
+
+
+; =======
+; LNPRINT
+; =======
+;
+; Print a zero suppressed line number
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  X, Y preserved
+;         A, P corrupt
+;
+
+LNPRINT
+ BIT FF
+LNPRI10
+ LDA LNNUM+1
+ JSR HEXP ;Print high byte
+ LDA LNNUM
+
+; Fall through to HEXP to print low byte
+
+HEXP
+ PHA
+ LSRA
+ LSRA
+ LSRA
+ LSRA ;Get top nibble
+ JSR HEXP10 ;Print the digit
+ PLA
+ ANDIM &F ;Get bottom nibble
+HEXP10
+ BEQ HPRINT
+ CLV ;Stop suppressing if non-zero
+
+; Fall through to HPRINT
+
+
+; ======
+; HPRINT
+; ======
+;
+; Print a hex digit
+;
+; ENTRY:- A = digit, in range 0 - F
+;         V = 1 <=> zero suppression required
+;
+; EXIT:-  A corrupt
+;         X, Y, P preserved
+;
+
+HPRINT
+ JSR HEXDIG
+ PHP
+ CMPIM &30
+ BNE HPRI20 ;Branch if not 0
+ BVS HPRI30 ;Branch if zero suppresing
+HPRI20
+ DEC COLUMN ;One more byte printed
+ JSR CHARPRINT ;Print
+HPRI30
+ PLP ;Preserve V
+ RTS
+
+
+; ======
+; HEXDIG
+; ======
+;
+; Convert a digit to hex
+;
+; ENTRY:- A = digit to convert
+;
+; EXIT:-  A = converted digit
+;         X, Y, P preserved
+;
+
+HEXDIG  PHP
+        SED     ; Tutu
+        CMPIM   10
+        ADCIM   "0"
+        PLP
+        RTS
+
+
+        LNK     MASM05  ; End of message and error handling routines file

@@ -1,0 +1,1100 @@
+ TTL Macro assembler - opcode decoding routines -> MASM14
+ OPT MASM14
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; OPCODE DECODING TABLES
+;
+TH1TAB
+;Table of first letters of 3 letter opcodes
+ = "NJP"
+FO1TAB
+;Table of first letters of 4 letter opcodes
+ = "OT"
+;Table of first letters of 5 letter opcodes
+ = "ABCDEILRS"
+TH1LEN * .-TH1TAB
+FO1LEN * .-FO1TAB
+TH1HI
+ = /TH1N
+ = /TH1J
+ = /TH1P
+ = /TH1O
+ = /TH1T
+ = /TH1A
+ = /TH1B
+ = /TH1C
+ = /TH1D
+ = /TH1E
+ = /TH1I
+ = /TH1L
+ = /TH1R
+ = /TH1S
+ ASSERT .=TH1HI+TH1LEN
+TH1LO
+ = TH1N
+ = TH1J
+ = TH1P
+ = TH1O
+ = TH1T
+ = TH1A
+ = TH1B
+ = TH1C
+ = TH1D
+ = TH1E
+ = TH1I
+ = TH1L
+ = TH1R
+ = TH1S
+ ASSERT .=TH1LO+TH1LEN
+FO1HI
+ = /FO1O
+ = /FO1T
+ = /FO1A
+ = /FO1B
+ = /FO1C
+ = /FO1D
+ = /FO1E
+ = /FO1I
+ = /FO1L
+ = /FO1R
+ = /FO1S
+ [ .-FO1HI-FO1LEN=0
+ |
+ ! 0,"Four letter opcode table fault"
+ ]
+FO1LO
+ = FO1O
+ = FO1T
+ = FO1A
+ = FO1B
+ = FO1C
+ = FO1D
+ = FO1E
+ = FO1I
+ = FO1L
+ = FO1R
+ = FO1S
+ [ .-FO1LO-FO1LEN /= 0
+ ! 0,"Four letter opcode table fault"
+ ]
+TH1A
+ = &6D ;ADC
+ = ZPOPT
+ = "CD"
+ = &2D
+ = ZPOPT
+ = "DN"
+ = &0E ;ASL
+ = ZPOPT
+ = "LS"
+TH1ALEN * .-TH1A
+ [ TH1ALEN:MOD:4 /= 0
+ ! 0,"TH1ALEN not a multiple of four"
+ ]
+TH1B
+ [ $R6500
+ = &0F ;BBR
+ = BBRTYPE+C6502
+ = "RB"
+ = &8F ;BBS
+ = BBRTYPE+C6502
+ = "SB"
+ ]
+ = &80 ;BRA
+ = RELBR+C6502
+ = "AR"
+ = &00 ;BRK
+ = NOOPND
+ = "KR"
+ = &50 ;BVC
+ = RELBR
+ = "CV"
+ = &70 ;BVS
+ = RELBR
+ = "SV"
+ = &2C ;BIT
+ = ZPOPT
+ = "TI"
+ = &10 ;BPL
+ = RELBR
+ = "LP"
+ = &30 ;BMI
+ = RELBR
+ = "IM"
+ = &90 ;BCC
+ = RELBR
+ = "CC"
+ = &B0 ;BCS
+ = RELBR
+ = "SC"
+ = &F0 ;BEQ
+ = RELBR
+ = "QE"
+ = &D0 ;BNE
+ = RELBR
+ = "EN"
+TH1BLEN * .-TH1B
+ [ TH1BLEN:MOD:4 /= 0
+ ! 0,"TH1BLEN not a multiple of four"
+ ]
+TH1C
+ = &9C ;CLR
+ = ZPOPT+C6502
+ = "RL"
+ = &D8 ;CLD
+ = NOOPND
+ = "DL"
+ = &58 ;CLI
+ = NOOPND
+ = "IL"
+ = &B8 ;CLV
+ = NOOPND
+ = "VL"
+ = &18 ;CLC
+ = NOOPND
+ = "CL"
+ = &CC ;CPY
+ = ZPOPT
+ = "YP"
+ = &EC ;CPX
+ = ZPOPT
+ = "XP"
+ = &CD ;CMP
+ = ZPOPT
+ = "PM"
+TH1CLEN * .-TH1C
+ [ TH1CLEN:MOD:4 /= 0
+ ! 0,"TH1CLEN not a multiple of four"
+ ]
+TH1D
+ = &3A ;DEA
+ = NOOPND+C6502
+ = "AE"
+ = &CE ;DEC
+ = ZPOPT
+ = "CE"
+ = &CA ;DEX
+ = NOOPND
+ = "XE"
+ = &88 ;DEY
+ = NOOPND
+ = "YE"
+TH1DLEN * .-TH1D
+ [ TH1DLEN:MOD:4 /= 0
+ ! 0,"TH1DLEN not a multiple of four"
+ ]
+TH1E
+ = &4D ;EOR
+ = ZPOPT
+ = "RO"
+TH1ELEN * .-TH1E
+ [ TH1ELEN:MOD:4 /= 0
+ ! 0,"TH1ELEN not a multiple of four"
+ ]
+TH1I
+ = &1A ;INA
+ = NOOPND+C6502
+ = "AN"
+ = &EE ;INC
+ = ZPOPT
+ = "CN"
+ = &E8 ;INX
+ = NOOPND
+ = "XN"
+ = &C8 ;INY
+ = NOOPND
+ = "YN"
+TH1ILEN * .-TH1I
+ [ TH1ILEN:MOD:4 /= 0
+ ! 0,"TH1ILEN not a multiple of four"
+ ]
+TH1J
+ = &6C ;JMI
+ = ANYTWO
+ = "IM"
+ = &4C ;JMP
+ = ANYTWO
+ = "PM"
+ = &20 ;JSR
+ = ANYTWO
+ = "RS"
+TH1JLEN * .-TH1J
+ [ TH1JLEN:MOD:4 /= 0
+ ! 0,"TH1JLEN not a multiple of four"
+ ]
+TH1L
+ = &4E ;LSR
+ = ZPOPT
+ = "RS"
+ = &AD ;LDA
+ = ZPOPT
+ = "AD"
+ = &AE ;LDX
+ = ZPOPT
+ = "XD"
+ = &AC ;LDY
+ = ZPOPT
+ = "YD"
+TH1LLEN * .-TH1L
+ [ TH1LLEN:MOD:4 /= 0
+ ! 0,"TH1LLEN not a multiple of four"
+ ]
+TH1N
+ = &EA ;NOP
+ = NOOPND
+ = "PO"
+TH1NLEN * .-TH1N
+ [ TH1NLEN:MOD:4 /= 0
+ ! 0,"TH1NLEN not a multiple of four"
+ ]
+TH1O
+ = &0D ;ORA
+ = ZPOPT
+ = "AR"
+TH1OLEN * .-TH1O
+ [ TH1OLEN:MOD:4 /= 0
+ ! 0,"TH1OLEN not a multiple of four"
+ ]
+TH1P
+ = &DA ;PHX
+ = NOOPND+C6502
+ = "XH"
+ = &5A ;PHY
+ = NOOPND+C6502
+ = "YH"
+ = &FA ;PLX
+ = NOOPND+C6502
+ = "XL"
+ = &7A ;PLY
+ = NOOPND+C6502
+ = "YL"
+ = &48 ;PHA
+ = NOOPND
+ = "AH"
+ = &08 ;PHP
+ = NOOPND
+ = "PH"
+ = &68 ;PLA
+ = NOOPND
+ = "AL"
+ = &28 ;PLP
+ = NOOPND
+ = "PL"
+TH1PLEN * .-TH1P
+ [ TH1PLEN:MOD: 4 /= 0
+ ! 0,"TH1PLEN not a multiple of four"
+ ]
+TH1R
+ [ $R6500
+ = &07 ;RMB
+ = RMBTYPE+C6502
+ = "BM"
+ ]
+ = &40 ;RTI
+ = NOOPND
+ = "IT"
+ = &2E ;ROL
+ = ZPOPT
+ = "LO"
+ = &6E ;ROR
+ = ZPOPT
+ = "RO"
+ = &60 ;RTS
+ = NOOPND
+ = "ST"
+TH1RLEN * .-TH1R
+ [ TH1RLEN:MOD:4 /= 0
+ ! 0,"TH1RLEN not a multiple of four"
+ ]
+TH1S
+ [ $R6500
+ = &87 ;SMB
+ = RMBTYPE+C6502
+ = "BM"
+ ]
+ = &9C ;STZ
+ = ZPOPT+C6502
+ = "ZT"
+ = &F8 ;SED
+ = NOOPND
+ = "DE"
+ = &78 ;SEI
+ = NOOPND
+ = "IE"
+ = &38 ;SEC
+ = NOOPND
+ = "CE"
+ = &ED ;SBC
+ = ZPOPT
+ = "CB"
+ = &8C ;STY
+ = ZPOPT
+ = "YT"
+ = &8E ;STX
+ = ZPOPT
+ = "XT"
+ = &8D ;STA
+ = ZPOPT
+ = "AT"
+TH1SLEN * .-TH1S
+ [ TH1SLEN:MOD:4 /= 0
+ ! 0,"TH1SLEN not a multiple of four"
+ ]
+TH1T
+ = &1C ;TRB
+ = ZPOPT+C6502
+ = "BR"
+ = &0C ;TSB
+ = ZPOPT+C6502
+ = "BS"
+ = &9A ;TXS
+ = NOOPND
+ = "SX"
+ = &BA ;TSX
+ = NOOPND
+ = "XS"
+ = &AA ;TAX
+ = NOOPND
+ = "XA"
+ = &A8 ;TAY
+ = NOOPND
+ = "YA"
+ = &8A ;TXA
+ = NOOPND
+ = "AX"
+ = &98 ;TYA
+ = NOOPND
+ = "AY"
+TH1TLEN * .-TH1T
+ [ TH1TLEN:MOD:4 /= 0
+ ! 0,"TH1TLEN not a multiple of four"
+ ]
+TH1NUM ;Table of lengths of tables
+ = TH1NLEN-1
+ = TH1JLEN-1
+ = TH1PLEN-1
+ = TH1OLEN-1
+ = TH1TLEN-1
+ = TH1ALEN-1
+ = TH1BLEN-1
+ = TH1CLEN-1
+ = TH1DLEN-1
+ = TH1ELEN-1
+ = TH1ILEN-1
+ = TH1LLEN-1
+ = TH1RLEN-1
+ = TH1SLEN-1
+ [ .-TH1NUM-TH1LEN=0
+ |
+ ! 0,"Lengths table fault in 3 letter opcodes"
+ ]
+FO1A
+ = &06 ;ASLZ
+ = AEND
+ = "LS"
+ = &25 ;ANDZ
+ = IEND
+ = "DN"
+ = &65 ;ADCZ
+ = IEND
+ = "CD"
+FO1ALEN * .-FO1A
+ [ FO1ALEN:MOD:4 /= 0
+ ! 0,"FO1ALEN not a multiple of four"
+ ]
+FO1B
+ = &24 ;BITZ
+ = ZEND
+ = "TI"
+FO1BLEN * .-FO1B
+ [ FO1BLEN:MOD:4 /= 0
+ ! 0,"FO1BLEN not a multiple of four"
+ ]
+FO1C
+ = &64 ;CLRZ
+ = ZEND+C6502
+ = "RL"
+ = &C4 ;CPYZ
+ = ZEND
+ = "YP"
+ = &E4 ;CPXZ
+ = ZEND
+ = "XP"
+ = &C5 ;CMP
+ = IEND
+ = "PM"
+FO1CLEN * .-FO1C
+ [ FO1CLEN:MOD:4 /= 0
+ ! 0,"FO1CLEN not a multiple of four"
+ ]
+FO1D
+ = &C6 ;DEC
+ = AEND+C6502
+ = "CE"
+FO1DLEN * .-FO1D
+ [ FO1DLEN:MOD:4 /= 0
+ ! 0,"FO1DLEN not a multiple of four"
+ ]
+FO1E
+ = &45 ;EOR
+ = IEND
+ = "RO"
+FO1ELEN * .-FO1E
+ [ FO1ELEN:MOD:4 /= 0
+ ! 0,"FO1ELEN not a multiple of four"
+ ]
+FO1I
+ = &E6 ;INC
+ = AEND+C6502
+ = "CN"
+FO1ILEN * .-FO1I
+ [ FO1ILEN:MOD:4 /= 0
+ ! 0,"FO1ILEN not a multiple of four"
+ ]
+FO1L
+ = &46 ;LSR
+ = AEND
+ = "RS"
+ = &A4 ;LDYZ
+ = ZEND
+ = "YD"
+ = &A6 ;LDXZ
+ = ZEND
+ = "XD"
+ = &A5 ;LDA
+ = IEND
+ = "AD"
+FO1LLEN * .-FO1L
+ [ FO1LLEN:MOD:4 /= 0
+ ! 0,"FO1LLEN not a multiple of four"
+ ]
+FO1O
+ = &05 ;ORA
+ = IEND
+ = "AR"
+FO1OLEN * .-FO1O
+ [ FO1OLEN:MOD:4 /= 0
+ ! 0,"FO1OLEN not a multiple of four"
+ ]
+FO1R
+ = &26 ;ROL
+ = AEND
+ = "LO"
+ = &66 ;ROR
+ = AEND
+ = "RO"
+FO1RLEN * .-FO1R
+ [ FO1RLEN:MOD:4 /= 0
+ ! 0,"FO1RLEN not a multiple of four"
+ ]
+FO1S
+ = &64 ;STZZ
+ = ZEND+C6502
+ = "ZT"
+ = &E5 ;SBC
+ = IEND
+ = "CB"
+ = &84 ;STYZ
+ = ZEND
+ = "YT"
+ = &86 ;STXZ
+ = ZEND
+ = "XT"
+ = &85 ;STAZ
+ = IEND
+ = "AT"
+FO1SLEN * .-FO1S
+ [ FO1SLEN:MOD:4 /= 0
+ ! 0,"FO1SLEN not a multiple of four"
+ ]
+FO1T
+ = &14 ;TRBZ
+ = ZEND+C6502
+ = "BR"
+ = &04 ;TSBZ
+ = ZEND+C6502
+ = "BS"
+FO1TLEN * .-FO1T
+ [ FO1TLEN:MOD:4 /= 0
+ ! 0,"FO1TLEN not a multiple of four"
+ ]
+FO1NUM ;Table of lengths of tables
+ = FO1OLEN-1
+ = FO1TLEN-1
+ = FO1ALEN-1
+ = FO1BLEN-1
+ = FO1CLEN-1
+ = FO1DLEN-1
+ = FO1ELEN-1
+ = FO1ILEN-1
+ = FO1LLEN-1
+ = FO1RLEN-1
+ = FO1SLEN-1
+ [ .-FO1NUM-FO1LEN /= 0
+ ! 0,"Lengths table fault in 4 letter opcodes"
+ ]
+;
+; ======
+; OPCODE
+; ======
+;
+; Decode a possible opcode
+;
+; ENTRY:- Symbol in SYMBOL
+;
+; EXIT:-  C = 1 <=> good opcode
+;         Value in OPCVAL
+;         Status in OPCSTAT
+;         Y corrupt
+;
+OPCODE
+ JSR COUNTS ;Count the number of characters in the name
+ CPXIM 6
+ BNE OPCO20 ;Branch if not too long
+OPCO05
+ CLC
+OPCO10
+ RTS
+OPCO20
+ CPXIM 3
+ BCC OPCO10 ;Branch if too short
+ JSR OPCSUB
+ BCC OPCO10 ;Branch if opcode no good
+ CPXIM C6502
+ BCC OPCO30 ;Branch if not CMOS 6502
+ BIT CPU
+ BPL OPCO05 ;Branch if not allowed this opcode
+OPCO30
+ SEC
+ ROR NOCPU ;Now assumed a cpu
+ SEC
+ STA OPCVAL
+ TXA
+ ANDIM &7F ;Throw away CMOS bit
+ STA OPCSTAT
+ RTS
+OPCSUB
+ LDYIM 1
+ LDAAX OPHTAB-3
+ PHA
+ LDAAX OPLTAB-3
+ PHA
+ LDA SYMBOL ;Get first character of opcode
+ RTS ;Branch to relevant routine
+OPHTAB
+ = /(OPTHREE-1)
+ = /(OPFOUR-1)
+ = /(OPFIVE-1)
+OPLTAB
+ = OPTHREE-1
+ = OPFOUR-1
+ = OPFIVE-1
+OPTHREE
+;
+; Deal with 3 letter opcodes
+;
+ LDXIM TH1LEN-1 ;Length of first letter table -1
+OPTH10
+ CMPAX TH1TAB ;Look in table
+ BEQ OPTH20 ;Branch if found
+ DEX
+ BPL OPTH10 ;Loop till all tried
+OPTH05
+ CLC ;Exit bad
+ RTS
+OPTH20
+ LDAAX TH1HI
+ STA OPPTR+1
+ LDAAX TH1LO
+ STA OPPTR ;Pointer to relevant table
+ LDYAX TH1NUM ;Length of given table
+OPTH30
+;
+; Now check for good opcode
+;
+ PHY
+ LDA SYMBOL+1
+ CMPIY OPPTR ;Check second character
+ BNE OPTH50 ;Branch if different
+ DEY
+ LDA SYMBOL+2
+ CMPIY OPPTR ;Check third character
+ BNE OPTH50 ;Branch if different
+ PLA ;Stack straight
+ DEY
+ LDAIY OPPTR ;Get status
+OPTH40
+ TAX
+ DEY
+ LDAIY OPPTR ;Get value
+ RTS
+OPTH50
+ PLA
+ SEC
+ SBCIM 4 ;On to next entry
+ TAY
+ BCS OPTH30 ;Loop if more look at
+ RTS ;Return unknown
+OPFOUR
+;
+; Deal with 4 letter opcodes
+;
+ CMPIM "J" ;Handle J separately
+ BNE OPFO05
+ LDA SYMBOL+1
+ CMPIM "M"
+ BNE OPTH05
+ LDA SYMBOL+2
+ CMPIM "I"
+ BNE OPTH05
+ LDA SYMBOL+3
+ CMPIM "X"
+ BNE OPTH05 ;Give up if not JMIX
+ LDXIM C6502+ANYTWO
+ LDAIM &7C
+ RTS
+OPFO05
+ LDXIM FO1LEN-1 ;Length of first letter table -1
+OPFO10
+ CMPAX FO1TAB ;Look in table
+ BEQ OPFO20 ;Branch if found
+ DEX
+ BPL OPFO10 ;Loop till all tried
+OPFO15
+ CLC ;Exit bad
+ RTS
+OPFO20
+ LDAAX FO1HI
+ STA OPPTR+1
+ LDAAX FO1LO
+ STA OPPTR ;Pointer to relevant table
+ LDYAX FO1NUM ;Length of given table
+OPFO30
+;
+; Now check for good opcode
+;
+ PHY
+ LDXIM -2 ;Incrementing count
+OPFO40
+ LDAAX SYMBOL+1+2
+ CMPIY OPPTR
+ BNE OPFO70 ;Branch if mismatch
+ DEY
+ INX
+ BNE OPFO40 ;Loop for second character
+ PLA ;Stack straight
+ LDAIY OPPTR ;Get status
+ TAX
+;
+; Now check last character of opcode
+;
+ LSRA
+ ASSERT ZEND=1
+ BCC OPFO50 ;Branch if not Z only
+ LDA SYMBOL+3
+ CMPIM "Z"
+ BNE OPFO15 ;Exit if bad
+ TXA
+ ANDIM &80 ;Isolate C6502 status
+ ORAIM ZPONLY
+ BNE OPTH40 ;Branch always
+OPFO50
+ LSRA
+ ASSERT AEND=2
+ LDA SYMBOL+3
+ BCC OPFO60 ;Branch if not A/Z case
+ CMPIM "Z"
+ BNE OPFO55
+OPFO52
+ DEY
+ LDAIY OPPTR
+ LDXIM ZPONLY
+ RTS
+OPFO55
+ CMPIM "A"
+ BNE OPFO15 ;Branch if no good
+ DEY
+ LDAIY OPPTR
+ DEX
+ BMI OPFO57 ;Branch if extended CPU (INC/DEC case)
+ ASSERT C6502>=&80
+ EORIM &0C ;Convert to A form
+ LDXIM NOOPND
+ RTS
+OPFO57
+ EORIM &FC ;INCZ -> INCA
+ LDXIM C6502+NOOPND
+ RTS
+OPFO60
+;
+; Handle Z/I
+;
+ CMPIM "Z"
+ BEQ OPFO52 ;Common code for Z form
+ CMPIM "I"
+ BNE OPFO15 ;Give up if not indirect
+ DEY
+ LDAIY OPPTR ;Get ZP form
+ EORIM &17 ;Convert to I form
+ LDXIM C6502+ZPONLY
+ RTS
+OPFO70
+ PLA
+ SEC
+ SBCIM 4 ;On to next entry
+ TAY
+ BCS OPFO30 ;Loop if more look at
+ RTS ;Return unknown
+FIVETAB
+;
+; Table of odd five letter opcodes
+;
+ = "BITIM",ANYONE+C6502,&89
+ = "CLRAX",ZPOPT+C6502,&9E
+ = "CLRZX",ZPONLY+C6502,&74
+ = "LDYZX",ZPONLY,&B4
+ = "LDXZY",ZPONLY,&B6
+ = "LDYAX",ZPOPT,&BC
+ = "LDXAY",ZPOPT,&BE
+ = "STAAX",ZPOPT,&9D
+ = "STAAY",ANYTWO,&99
+ = "STAIX",ZPONLY,&81
+ = "STAIY",ZPONLY,&91
+ = "STAZX",ZPONLY,&95
+ = "STXZY",ZPONLY,&96
+ = "STYZX",ZPONLY,&94
+ = "STZAX",ZPOPT+C6502,&9E
+ = "STZZX",ZPONLY+C6502,&74
+ADCTYPE
+;
+; Table of opcodes of ADC type, with allowable endings:-
+; AX, AY, IM, IX, IY, ZX
+;
+ = "EOR"
+ = &41 ;EORIX
+ = "LDA"
+ = &A1 ;LDAIX
+ = "SBC"
+ = &E1 ;SBCIX
+ = "AND"
+ = &21 ;ANDIX
+ = "ORA"
+ = &01 ;ORAIX
+ = "CMP"
+ = &C1 ;CMPIX
+ = "ADC"
+ = &61 ;ADCIX
+ADCMODE
+;
+; Table of allowable modes for ADC type opcodes
+;
+ = "IY"
+ = ZPONLY
+ = &10
+ = "IX"
+ = ZPONLY
+ = &00
+ = "ZX"
+ = ZPONLY
+ = &14
+ = "AY"
+ = ANYTWO
+ = &18
+ = "IM"
+ = ANYONE
+ = &08
+ = "AX"
+ = ZPOPT
+ = &1C
+ASLTYPE
+;
+; Table of opcodes of ASL type
+;
+ = "ROL"
+ = &36 ;ROLZX
+ = "DEC"
+ = &D6 ;DECZX
+ = "ROR"
+ = &76 ;RORZX
+ = "INC"
+ = &F6 ;INCZX
+ = "LSR"
+ = &56 ;LSRZX
+ = "ASL"
+ = &16 ;ASLZX
+ = "BIT"
+ = &34 ;BITZX
+CPXTYPE
+;
+; Table of opcodes of CPX type
+;
+ = "LDX"
+ = &A2 ;LDXIM
+ = "LDY"
+ = &A0 ;LDYIM
+ = "CPX"
+ = &E0 ;CPXIM
+ = "CPY"
+ = &C0 ;CPYIM
+OPFIVE
+;
+; Handle five letter opcodes
+; First check for odd one out cases
+;
+ DEY ;Index,note Y=1 from call
+ CMPIM "B"
+ BEQ OPFI60 ;Branch if trying BITIM
+ INY
+ CMPIM "C"
+ BNE OPFI20
+ LDA SYMBOL+3
+ CMPIM "A"
+ BEQ OPFI60
+ INY
+ BNE OPFI60 ;Branch always
+OPFI20
+ CMPIM "L"
+ BNE OPFI30
+ LDA SYMBOL+4
+ LSRA
+ LDA SYMBOL+3
+ ROLA ;Bring bit back
+ ANDIM 3
+ CLC
+ ADCIM 3 ;Range 3-6
+ TAY
+ BRA OPFI60
+OPFI30
+ LDA SYMBOL+2 ;Get 3rd.letter
+ CMPIM "A"
+ BNE OPFI50
+ LDA SYMBOL+3 ;Get 4th. letter
+ LDYIM 7
+ CMPIM "A"
+ BNE OPFI40
+ LDA SYMBOL+4 ;Get 5th. letter
+ CMPIM "X"
+ BEQ OPFI60
+ INY ; Y := 8
+ BRA OPFI60
+OPFI40
+ LDYIM 11
+ CMPIM "I"
+ BNE OPFI60
+ LDA SYMBOL+4 ;Get 5th. letter
+ DEY ;Y := 10
+ CMPIM "X"
+ BNE OPFI60
+ DEY ;Y := 9
+ BRA OPFI60
+OPFI50
+ LDYIM 12
+ CMPIM "X"
+ BEQ OPFI60
+ INY ;Y := 13
+ CMPIM "Y"
+ BEQ OPFI60
+ INY ;Y := 14
+ LDA SYMBOL+3 ;Get 4th. letter
+ CMPIM "A"
+ BEQ OPFI60
+ INY ;Y := 15
+OPFI60
+;
+; Now form index into table
+;
+ STY OPPTR
+ TYA
+ ASLA
+ ASLA
+ ASLA ;Index * 8
+ SEC
+ SBC OPPTR ;Index * 7
+ TAY
+ LDXIM -5 ;Incrementing counter
+OPFI70
+ LDAAX SYMBOL+5
+ CMPAY FIVETAB ;Compare with opcode in table
+ BNE OPFI80
+ INY
+ INX
+ BNE OPFI70 ;Loop if more comparisons
+ LDXAY FIVETAB ;Get status
+ LDAAY FIVETAB+1 ;Get value
+ RTS
+OPFI80
+;
+; Now handle standard cases
+; First try ADC type
+;
+ LDA SYMBOL
+ EOR SYMBOL+1
+ EOR SYMBOL+2
+ ANDIM &7 ;Make hash function
+ STA OPPTR+1 ;Save for later
+ TAX
+ CMPIM 6
+ BCC OPFI82 ;Branch if in range and no modification required
+ BNE OPFI92 ;Branch if out of range
+ LDA SYMBOL
+ CMPIM "C"
+ BNE OPFI82 ;Branch if no modification required
+ DEX ;New index
+OPFI82
+ TXA
+ ASLA
+ ASLA ;Index * 4
+ TAX
+ LDYIM -3 ;Incrementing counter
+OPFI84
+ LDAAY SYMBOL+3-&100
+ CMPAX ADCTYPE
+ BNE OPFI92 ;Branch if not in table
+ INX
+ INY
+ BNE OPFI84 ;Loop till end of symbol
+ LDAAX ADCTYPE ;Get value
+ STA OPPTR ;Save for later
+;
+; Now check ending
+;
+ LDA SYMBOL+4
+ EOR SYMBOL+3
+ ANDIM &F ;Hash function for address mode
+ CMPIM 8
+ BCC OPFI86 ;Branch if no modification required
+ CMPIM 9
+ SBCIM 4 ;8 -> 3, 9 -> 5
+OPFI86
+ CMPIM 6
+ BCS OPFI90 ;Branch if not opcode
+ ASLA
+ ASLA ;Index * 4
+ TAY
+ LDXIM -2 ;Incrementing counter
+OPFI88
+ LDAAX SYMBOL+5
+ CMPAY ADCMODE
+ BNE OPFI90 ;Branch if not opcode
+ INY
+ INX
+ BNE OPFI88 ;Loop for more characters
+ LDXAY ADCMODE ;Get mode
+ LDAAY ADCMODE+1 ;Get modifier
+ EOR OPPTR ;Add in opcode value
+ RTS
+OPFI90
+ CLC ;Indicate not opcode
+ RTS
+OPFI92
+;
+; Now try ASL type
+;
+ LDA SYMBOL+4
+ CMPIM "X" ;Last letter must be X for this type
+ BNE OPF100
+ LDX OPPTR+1 ;Retrieve previously calculated hash function
+ CPXIM 7
+ BNE OPFI94
+ LDA SYMBOL
+ CMPIM "R"
+ BNE OPFI94 ;Distinguish two types hashing to 7
+ LDXIM 3
+OPFI94
+ DEX
+ BMI OPF100 ;Branch if not this opcode
+ TXA
+ ASLA
+ ASLA ;Index * 4
+ TAX
+ LDYIM -3 ;Incrementing counter
+OPFI96
+ LDAAY SYMBOL+3-&100
+ CMPAX ASLTYPE
+ BNE OPF100 ;Branch if not this type
+ INX
+ INY
+ BNE OPFI96 ;Loop till end of symbol
+ LDAAX ASLTYPE ;Get zero page form
+ LDXIM ZPONLY ;Assume correct for the moment
+ LDY SYMBOL+3
+ CPYIM "Z"
+ BEQ OPFI98 ;Branch if correct
+ CPYIM "A"
+ BNE OPF100 ;Incorrect if not A or Z
+ ORAIM &8 ;Put in absolute bit
+ LDXIM ZPOPT
+OPFI98
+;
+; Note C = 1
+;
+ PHA
+ ANDIM &2 ;Distinguish BIT from the others
+ BNE OPFI99
+ TXA
+ ORAIM C6502 ;Mark extended cpu
+ TAX
+OPFI99
+ PLA
+ RTS
+OPF100
+;
+; Now try CPX type
+;
+ LDA SYMBOL+ 2
+ LSRA ;Bottom bit into C
+ LDA SYMBOL
+ ROLA
+ ANDIM &3 ;Get hash function
+ ASLA
+ ASLA ;Index * 4
+ TAY
+ LDXIM -3 ;Incrementing counter
+OPF102
+ LDAAX SYMBOL+3
+ CMPAY CPXTYPE
+ BNE OPFI90 ;Branch if not opcode
+ INY
+ INX
+ BNE OPF102 ;Loop till end of symbol
+ LDA SYMBOL+3
+ CMPIM "I"
+ BNE OPFI90 ;Branch if not IM
+ LDA SYMBOL+4
+ CMPIM "M"
+ BNE OPFI90 ;Branch if not IM
+ LDAAY CPXTYPE ;Get opcode value
+ LDXIM ANYONE ;And type
+COUN20
+ RTS
+;
+; ======
+; COUNTS
+; ======
+;
+; Count the number of significant characters in a symbol
+;
+; ENTRY:- Symbol in SYMBOL
+;
+; EXIT:-  X = number of characters
+;         A, P corrupt
+;         Y preserved
+;         C = 1
+;
+COUNTS
+ LDXIM 6
+COUN10
+ LDAAX SYMBOL-1
+ CMPIM SPACE ;See if at end of symbol
+ BNE COUN20 ;Branch if not
+ DEX
+ BRA COUN10
+;
+; End of opcode decoding routines file
+;
+ LNK MASM15

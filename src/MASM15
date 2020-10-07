@@ -1,0 +1,1040 @@
+ TTL Macro assembler - directive handling routines part 1 -> MASM15
+ OPT MASM15
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; =======
+; DIRFIND
+; =======
+;
+; Look for pseudo-opcode in current line
+;
+; ENTRY:- LINEPTR points to line
+;         ERRSW < 0 <=> error pending
+;
+; EXIT:-  ERRSW < 0 <=> error pending
+;         C = 1 <=> line is directive
+;         Directive number in DIRNUM
+;         Y points after directive if found
+;
+DIRHTAB
+ = /(DIR3-1)
+ = /(DIR4-1)
+ = /(DIR5-1)
+ = /(DIR6-1)
+DIRLTAB
+ = DIR3-1
+ = DIR4-1
+ = DIR5-1
+ = DIR6-1
+DIRFIND
+ JSR DIRFSUB ;First look for directive
+;
+; Fall through to DIRCHK
+;
+; ======
+; DIRCHK
+; ======
+;
+; Check line start option on directive
+;
+; ENTRY:- C = 1 <=> check required
+;         DIRNUM contains directive number
+;
+; EXIT:-  ERRSW < 0 <=> error
+;         Otherwise
+;         C = 1 <=> valid directive
+;         Y preserved
+;         A, X corrupt
+;
+ BIT ERRSW
+ BMI DIRC10 ;Branch if error pending
+ BIT MACDEF
+ BMI DIRC10 ;Don't check when defining macros
+ BCC DIRC10 ;Branch if no check needed
+ LDX DIRNUM
+ PHY
+ LDYIM 0 ;Back to start of line
+ LDAAX DIRTYPE ;Get check needed
+ ANDIM 7 ;Look only at pre-directive check bits
+ BNE DIRC40 ;Branch if not spaces check
+ JSR SPSKIP ;Skip spaces
+DIRC30
+ PLY
+DIRC10
+ RTS ;Return carry significant
+DIRC40
+ TAX
+ LDA IFDEPTH
+ ORA WDEPTH
+ CLC
+ BNE DIRC30 ;Branch if no check needed cos' conditioned out
+ DEX
+ BNE DIRC60 ;Branch if not label check
+DIRC50
+ JSR GETSMAN
+ CLC
+ BVS DIRC30 ;Branch if bad label
+ LDX DIRNUM
+ LDAAX DIRTYPE ;Only defining for type 2
+ CMPIM 2
+ BNE DIRC55
+ LDA PASS
+ BNE DIRC55 ;No definition if on pass 2
+ CPXIM THASH
+ BEQ DIRC55 ;Don't define for #
+ PHY
+ JSR DPSYMB
+ PLY
+ BCS DIRC30 ;Branch if error
+DIRC55
+ JSR SPSKIP
+ PLY
+ RTS
+DIRC60
+ DEX
+ BNE DIRC70 ;Branch if variable check
+;
+; Here we check for blank/label
+;
+ JSR SPSKIP
+ BCS DIRC30 ;Branch if blank
+;
+; Here we allow local labels for type 2
+;
+ LDX DIRNUM
+ LDAAX DIRTYPE
+ CMPIM 2
+ BNE DIRC50 ;Ordinary labels only if not type 2
+ JSR LNUMCHK ;Look for numeric start
+ BCS DIRC50 ;Branch if not
+ JSR LOCLAB ;Allow local label
+ RORA
+ EORIM &80
+ ASLA ;Invert C
+ PLY
+ RTS ;Return good
+DIRC70
+;
+; Here we check for $label
+;
+ DEX
+ BNE DIRC60 ;Branch if type 4
+ LDAIY LINEPTR
+ CLC
+ EORIM "$"
+ BNE DIRC30 ;Branch if missing
+ INY
+ BRA DIRC50 ;Check for label
+DIRFSUB
+ BIT ERRSW
+ BMI DIRC10 ;Branch if no error pending
+ JSR SKIPSUB ;Point to opcode portion
+ BIT ERRSW
+ BMI DIRC10 ;Branch if error
+ LDAIY LINEPTR ;Get first character
+ JSR ONEDIR ;See if one character directive
+ BCS DIRC10 ;Branch if so
+ JSR GETLAB ;Look for name type pseudo-opcode
+ BVS DIRF25 ;Branch if bad name
+ JSR COUNTS ;X = number of characters in name
+ CPXIM 3
+ BCC DIRF25 ;Branch if too short
+ LDAAX DIRHTAB-3
+ PHA
+ LDAAX DIRLTAB-3
+ PHA
+ LDA SYMBOL ;First character of name
+DIRF25
+ CLC
+ RTS ;Branch to relevant routine
+DIR6
+;
+; Handle 6 letter directive - ASSERT
+;
+ LDXIM 5
+DIR610
+ LDAAX SYMBOL
+ CMPAX ASSERT
+ BNE DIRF25 ;Branch if mismatch
+ DEX
+ BPL DIR610 ;Loop till end of symbol
+ LDAIM TASSERT
+ BRA DIR520 ;Exit
+DIR5
+;
+; Handle 5 letter pseudo-opcode
+;
+ LDXIM 3
+ CMPIM "M"
+ BEQ DIR530 ;possibly MACRO or MEXIT
+ CMPIM "W"
+ BNE DIRF25 ;Branch if not WHILE
+DIR510
+ LDAAX SYMBOL+1
+ CMPAX WHILE
+ BNE DIRF25 ;Branch if mismatch
+ DEX
+ BPL DIR510
+ LDAIM TWHILE ;Token
+DIR520
+ STA DIRNUM
+ RTS ;Exit found
+DIR530
+ LDAAX SYMBOL+1
+ CMPAX MACRO
+ BNE DIR540 ;Branch if mismatch
+ DEX
+ BPL DIR530
+ LDAIM TMACRO
+ BRA DIR520 ;Exit good
+DIR540
+ LDXIM 3
+DIR550
+ LDAAX SYMBOL+1
+ CMPAX MEXIT
+ BNE DIRF25 ;Branch if mismatch
+ DEX
+ BPL DIR550
+ LDAIM TMEXIT
+ BRA DIR520 ;Exit good
+DIR4
+;
+; Handle four letter pseudo-opcode
+;
+ LDXIM TMEND-TWEND
+ CMPIM "M"
+ BEQ DIR450 ;Possibly MEND
+ LDXIM 0
+ CMPIM "W"
+ BEQ DIR450 ;Possibly WEND
+ CMPIM "R"
+ BEQ DIR480 ;Try for ROUT
+ PHY ;Save entry Y
+ LDA SYMBOL ;Restore A
+ LDXIM 0
+ LDYIM 3
+DIR410
+ CMPAX DIR4TAB ;Check first letter
+ BEQ DIR430 ;Branch if found first letter
+ INX
+ INX
+ INX
+ INX ;On to next symbol
+ DEY
+ BNE DIR410 ;Loop till end of symbols
+ BRA DIR350
+DIR430
+ LDA SYMBOL+1
+ CMPAX DIR4TAB+1
+ BNE DIR350 ;Branch if not found
+ LDA SYMBOL+2
+ CMPAX DIR4TAB+2
+ BNE DIR350 ;Branch if not found
+ LDA SYMBOL+3
+ LDYIM &FF
+ CMPIM "A"
+ BEQ DIR440 ;Branch if found
+ INY
+ CMPIM "L"
+ BEQ DIR440 ;Branch if found
+ INY
+ CMPIM "S"
+ BNE DIR350 ;Branch if not found
+DIR440
+ TYA
+ ADCAX DIR4TAB+3 ;Construct full value
+ PLY ;Restore entry Y
+DIR445
+ SEC ;Good exit
+ BRA DIR520 ;Branch always to exit
+DIR450
+ PHX ;Save entry
+ LDXIM 2
+DIR460
+ LDAAX SYMBOL+1
+ CMPAX DIR3END
+ BNE DIR470 ;Branch if bad
+ DEX
+ BPL DIR460
+ PLA
+ ADCIM TWEND-1 ;Note C was 1
+ BRA DIR445 ;Exit good
+DIR470
+ PLA
+DIR475
+ CLC ;Exit bad
+ RTS
+DIR480
+ LDXIM 3
+DIR490
+ LDAAX SYMBOL
+ CMPAX DIR4ROUT-1
+ BNE DIR475
+ DEX
+ BNE DIR490 ;Loop till all compared
+ LDAIM TROUT ;Token
+ BRA DIR445
+DIR3
+ PHY
+ LDXIM 0
+DIR310
+ LDYIM 0
+DIR320
+ LDAAY SYMBOL
+ CMPAX DIR3TAB
+ BNE DIR330 ;Branch on mismatch
+ INX
+ INY
+ CPYIM 3
+ BNE DIR320 ;Branch if not end of symbol
+ PLY
+ LDAAX DIR3TAB ;Get value
+ BRA DIR445 ;Branch always to exit
+DIR330
+ BCC DIR350 ;Branch if symbol not in list
+DIR340
+ INX
+ INY
+ CPYIM 4
+ BNE DIR340 ;Loop till next symbol
+ CPXIM 4*6 ;See if finished table
+ BNE DIR310 ;Try next symbol
+DIR350
+ PLY
+ CLC
+ RTS ;Exit not found
+;
+; Handle 3 letter pseudo-opcodes
+;
+ASSERT
+ = "ASSERT"
+WHILE
+ = "HILE"
+MACRO
+ = "ACRO"
+MEXIT
+ = "EXIT"
+DIR4TAB
+ = "GBL",TGBLA
+ = "LCL",TLCLA
+ = "SET",TSETA
+DIR4ROUT
+ = "OUT"
+DIR3TAB
+ = "CPU",TCPU
+DIR3END
+ = "END",TEND
+ = "LNK",TLNK
+ = "OPT",TOPT
+ = "ORG",TORG
+ = "TTL",TTTL
+ONEDTAB
+ = "!#&%*<=>[]^|"
+DIRLEN * .-ONEDTAB
+ONEDVAL
+ = TMNOTE
+ = THASH
+ = TAMP
+ = TPERC
+ = TSTAR
+ = TSDRV
+ = TEQUAL
+ = TODRV
+ = TIF
+ = TFI
+ = THAT
+ = TELSE
+ ASSERT .=ONEDVAL+DIRLEN
+;
+; ======
+; ONEDIR
+; ======
+;
+; Check for one character directive
+;
+; ENTRY:- A = character
+;
+; EXIT:-  C = 1 <=> one character directive found
+;         Directive number in DIRNUM
+;         Y points after directive
+;         A, X corrupt
+;
+ONEDIR ROUT
+ LDXIM DIRLEN-1 ;Number of one character directives
+10ONEDIR
+ CMPAX ONEDTAB
+ BEQ #20ONEDIR ;Branch if found
+ DEX
+ BPL #10ONEDIR ;Loop till end of table
+ CLC
+ RTS ;Exit not found
+20ONEDIR
+ LDAAX ONEDVAL
+ STA DIRNUM ;Save directive number
+ INY ;Point past it
+ RTS ;Exit found
+DIRTYPE
+;
+; Table of checks to be done for each directive
+;
+ =  0+&80 ;TEND
+ =  0 ;TLNK
+ =  0 ;TORG
+ =  0 ;TOPT
+ =  0 ;TTTL
+ =  0 ;TWHILE
+ =  0+&80 ;TWEND
+ =  0+&80 ;TMACRO
+ =  0+&80 ;TMEXIT
+ =  0+&80 ;TMEND
+ =  0 ;TGBLA
+ =  0 ;TGBLL
+ =  0 ;TGBLS
+ =  0 ;TLCLA
+ =  0 ;TLCLL
+ =  0 ;TLCLS
+ =  3 ;TSETA
+ =  3 ;TSETL
+ =  3 ;TSETS
+ =  0 ;TIF
+ =  0+&80 ;TELSE
+ =  0+&80 ;TFI
+ =  0 ;TMNOTE
+ =  4 ;THASH (special, no defintiion and no local labels)
+ =  1 ;TSTAR
+ =  2 ;TEQUAL
+ =  2 ;TPERC
+ =  2 ;TAMP
+ =  0 ;THAT
+ =  0 ;TSDRV
+ =  0 ;TODRV
+ =  0 ;TASSERT
+ =  0 ;TCPU
+ =  1+&80 ;TROUT
+ALLOWD
+;
+; Table of directives allowed during conditional assembly/WHILE skipping
+;
+ = TELSE,TFI,TWEND,TIF,TWHILE,TEND,TLNK,TMEND
+ALLOWLEN * .-ALLOWD
+;
+; =======
+; DIRSUBS
+; =======
+;
+; Handle substitution into directives, and allowability under conditional assembly
+;
+; ENTRY:- Y points to rest of line
+;
+; EXIT:-  ERRSW set if error
+;         C = 0 <=> directive ignored by conditional assembly/WHILE or error
+;         A, X, P corrupt
+;
+DIRSUBS ROUT
+ LDA IFDEPTH
+ ORA WDEPTH
+ BEQ #30DIRSUBS ;Branch if not ignoring
+ LDA DIRNUM
+ LDXIM ALLOWLEN-1 ;Number of directives allowed
+10DIRSUBS
+ CMPAX ALLOWD
+ BEQ #30DIRSUBS ;Branch if allowed
+ DEX
+ BPL #10DIRSUBS ;Loop to look for more
+ CLC ;Return ignored
+DIRRTS
+20DIRSUBS
+ RTS
+30DIRSUBS
+;
+; Now see whether to substitute variables
+;
+ PHY ;Preserve Y
+ LDA DIRNUM
+ CMPIM TGBLA
+ BCC #40DIRSUBS ;Branch if so
+ CMPIM TLCLS+1
+ BCC #50DIRSUBS ;Branch if not
+40DIRSUBS
+ JSR VARLINE
+ CLR LCLFLAG ;No more LCL type directives
+50DIRSUBS
+ PLY
+ SEC ;Assume not ignored
+ LDX DIRNUM
+ LDAAX DIRTYPE ;Get type check bit
+ BMI #60DIRSUBS ;Branch if comment check required
+ JSR SPSKIP ;Look for spaces
+ BCS #20DIRSUBS ;Branch if found
+ JMP EBADSYN
+60DIRSUBS
+ JMP ECOMLINE
+;
+; ====
+; DEND
+; ====
+;
+; Handle the END directive
+;
+; ENTRY:- Return address on stack
+;
+; EXIT:-  No conditions
+;
+DEND
+ JSR LISTING ;Produce listing of final line
+ JSR CLOSEX
+ LDA MDEPTH
+ BEQ DEND05
+EEINMAC
+ BRK
+ = EINMAC,"END/LNK in macro",&00
+DEND05
+ PLA
+ PLA ;Throw away return address
+ JSR STCHECK ;Check not in unclosed conditional
+ CLR INTEXT ;No longer text processing
+ JSR CSAVE ;Save any code on pass 2
+ LDA ERRORS
+ ORA ERRORS+1 ;See if any errors
+ BEQ DIRRTS
+ JSR MESSAGE
+ = "Pass",!SPACE
+ LDA PASS
+ CLC
+ ADCIM "1"
+ JSR CHARPRINT
+ JSR MESSAGE
+ = " finished,",!SPACE
+ LDA ERRORS+1
+ JSR HEXPRINT
+ LDA ERRORS
+ JSR HEXPRINT
+ JSR MESSAGE
+ = " erro",!"r"
+ LDA ERRORS
+ LSRA
+ ORA ERRORS+1
+ BEQ DEND20
+ LDAIM "s"
+ JSR CHARPRINT
+DEND20
+ BRK
+ = &FF,CR,"Assembly stopped",&00
+;
+; ====
+; DLNK
+; ====
+;
+; Handle the LNK directive
+;
+; ENTRY:- Return to P110 on pass 1, P210 on pass 2
+;         Y points to rest of line
+;
+; EXIT:-  No conditions
+;
+DLNK
+ LDA MDEPTH
+ BNE EEINMAC
+ PLA
+ PLA ;Throw away other return address
+ JSR STCHECK ;Check not in unclosed conditional
+ PHY
+ JSR LISTING
+ JSR CSAVE ;Save code if on pass 2
+ PLY
+ JSR GETFNAME
+ LDA PASS
+ BNE DLNK50
+ JMP P110 ;Exit for next file on pass 1
+DLNK50
+ JMP P210 ;Exit for next file on pass 2
+;
+; ======
+; DMEXIT
+; ======
+;
+; Handle the MEXIT directive
+;
+; ENTRY:- Return address on stack
+;         Y points to rest of line
+;
+; EXIT:-  No conditions
+;
+DMEXIT
+ JSR DMENSUB ;Common code with DMEND
+ BCS DMEN40 ;Return if not in macro
+DMEX10
+ LDY STAPTR ;Get stack pointer
+ LDAAY STACK-1 ;Get last token
+ CMPIM SWHIL ;See if WHILE
+ BEQ DMEX20 ;Branch if so
+ BCS DMEN05 ;Branch if macro
+ ASSERT SCOND<SWHIL:LAND:SWHIL<SMACR
+ DEC STAPTR ;Down one byte for conditional
+ DEC IFFLAG ;One less successful IF
+ BRA DMEX10
+DMEX20
+ JSR OFFWHILE ;Remove WHILE token
+ DEC WFLAG ;One less successful WHILE
+ BRA DMEX10 ;And loop
+;
+; =====
+; DMEND
+; =====
+;
+; Handle the MEND directive
+;
+; ENTRY:- Return address on stack
+;         Y points to rest of line
+;
+; EXIT:-  No conditions
+;
+DMEND
+ JSR DMENSUB
+ BCS DMEN40 ;Branch if not in macro error
+DMEN05
+ JSR OFFMACRO ;Unstack the macro information
+ [ $TURBO
+ JSR EXPEND ;End macro expansion
+ |
+ LDAIM EMEXP
+ JSR UOSW0 ;Tell I/O processor
+ ]
+ JSR UPMAC ;Tell local label table
+ LDAIM MACUP
+ LDY HANDLE ;See if XREF
+ BEQ DMEN33 ;Branch if not
+ JSR OSBPUT
+DMEN33
+ DEC MDEPTH ;Down one macro level
+ BEQ DMEN40 ;Branch if no longer in a macro
+ DEC PSTAPTR ;Down macro parameter stack pointer
+ LDA PSTAPTR
+ STA SYMPT+1
+ LDYIM 0
+ CLR SYMPT
+DMEN35
+ LDAIY SYMPT
+ STAAY PARMTAB
+ INY
+ BNE DMEN35 ;Restore parameter block
+DMEN40
+ RTS ;And on to next line
+;
+; =======
+; DMENSUB
+; =======
+;
+; Common subroutine for DMEND and DMEXIT
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers preserved
+;         C = 1 <=> not in macro error
+;
+DMENSUB
+ CLC
+ LDA MDEPTH ;Check we're in a macro
+ BNE DMEN40
+ SEC
+ LDYIM BADDIR ;Complain
+ JMP ERROR
+;
+; =====
+; DROUT
+; =====
+;
+; Handle the ROUT directive
+;
+; ENTRY:- Return address on stack
+;
+; EXIT:-  No conditions
+;
+DROUT
+ LDYIM 0 ;Back to start of line
+ JSR GETSMAN ;Request label (cannot fail)
+ JSR SPSKIP ;Pass termination
+ STY CHARPTR
+ LDA PASS
+ BNE DROU05 ;Branch if on pass 2
+ JSR DPSYMB ;Define with value PROGC
+ BCS DMEN40 ;Branch if bad
+DROU05
+ JMP NEWROUT ;New routine entry to local label table
+;
+; ====
+; DTTL
+; ====
+;
+; Handle the TTL directive
+;
+; ENTRY:- Return address on stack
+;         Y points to rest of line (after spaces)
+;
+; EXIT:-  No conditions
+;
+DTTL
+;
+; Now copy rest of line into TITLE
+;
+ LDXIM 0
+DTTL10
+ LDAIY LINEPTR
+ STAAX TITLE
+ INX
+ INY
+ BMI DTTL20 ;Branch if line too long
+ CMPIM CR
+ BNE DTTL10
+ RTS
+DTTL20
+ LDAIM CR
+ STAAX TITLE ;Terminate TITLE
+ JMP ELNOVER ;Exit via error
+;
+; =====
+; DGBLL
+; =====
+;
+; Handle the GBLL directive
+;
+; ENTRY:- Y points to rest of line (after spaces)
+;
+; EXIT:-  No registers or flags preserved
+;
+DGBLL
+ LDAIM LOGICAL
+ BRA DGBCOM ;Common code
+;
+; =====
+; DGBLA
+; =====
+;
+; Handle the GBLA directive
+;
+; ENTRY:- Y points to rest of line (after spaces)
+;
+; EXIT:-  No registers or flags preserved
+;
+DGBLA
+ LDAIM ARITHM ;Type of variable symbol
+;
+; Fall through to DGBCOM
+; First check syntax
+;
+DGBCOM
+ STA TYPE
+ LDAIY LINEPTR
+ CMPIM "$" ;Look for variable qualifier
+ BNE DGBC60 ;Branch if not
+ INY
+ JSR GETVAR ;Set up variable name
+ BVS EBADLAB ;Branch if bad
+ CLC ;Symbol to be inserted
+ JSR VSYMB ;Try to insert
+ LDYIM STATOFF
+ BCC DGBC35 ;Branch if not already there
+ LDAIY SYMPT
+ EOR TYPE ;Check type of variable
+ ASLA ;Remove global bit
+ BNE EDDVAR ;Branch if bad
+DGBC35
+ LDAIM 0 ;Initialize to zero
+ INY
+ STAIY SYMPT
+ INY
+ STAIY SYMPT
+ LDY CHARPTR
+ JMP ECOMLINE
+EDDVAR
+ LDYIM DDVAR
+DGBC50
+ JMP ERROR
+DGBC60
+ JMP EBADSYN
+EBADLAB
+ LDYIM BADLAB
+ BRA DGBC50
+;
+; =====
+; DLCLL
+; =====
+;
+; Handle the LCLL directive
+;
+; ENTRY:- Y points to rest of line (after spaces)
+;
+; EXIT:-  No registers or flags preserved
+;
+DLCLL
+ LDAIM LOGICAL
+ BNE DLCCOM ;Branch always to common code
+;
+; =====
+; DLCLA
+; =====
+;
+; Handle the LCLA directive
+;
+; ENTRY:- Y points to rest of line (after spaces)
+;
+; EXIT:-  No registers or flags preserved
+;
+DLCLA
+ LDAIM ARITHM ;Type of variable symbol
+;
+; Fall through to DLCCOM
+; First check syntax
+;
+DLCCOM
+ ORA MDEPTH
+ STA TYPE
+ LDA MDEPTH
+ BEQ ENOTINM ;Branch if not in a macro
+ BIT LCLFLAG ;See if allowed this directive now
+ BPL EDIRTL ;Branch if not
+ LDAIY LINEPTR
+ CMPIM "$" ;Look for variable qualifier
+ BNE DGBC60 ;Branch if not
+ INY
+ JSR GETVAR ;Set up variable name
+ BVS EBADLAB ;Branch if bad
+ BIT FF ;V = 1
+ JSR LVLOOK ;Symbol to be inserted in parameter table
+ BCS EDDVAR ;Branch if doubly defined
+ JSR LSYMB ;Try to insert
+ LDA TYPE
+ STAIY SYMPT ;Update type
+ BRA DGBC35 ;Common code now
+ENOTINM
+ LDYIM NOTINM
+ BRA DGBC50
+EDIRTL
+ LDYIM DIRTL
+ BRA DGBC50
+;
+; =====
+; DSTAR
+; =====
+;
+; Handle the * directive
+;
+; ENTRY:- No conditions
+;         Y points to rest of line (after spaces);
+; EXIT:-  No registers or flags preserved
+;
+DSTAR
+ JSR ARTEXPR
+ LDA PASS
+ BNE DSTA70 ;Branch if pass 2
+ BCC DSTA10 ;Branch if good
+ BVS DSTA45 ;Branch if bad syntax
+ BIT FF ;Indicate undefined expression
+ BRA DSTA20
+DSTA10
+ CLV
+DSTA20
+ JSR COMCHK ;Check termination
+ BCC EBADSYN ;Branch if bad
+ PHP ;Save expression status
+ LDYIM 0
+ JSR GETSMAN
+ JSR DGSYMB
+ LDYIM STATOFF
+ BCC DSTA30 ;Branch if not in table
+ LDAIY SYMPT
+ ANDIM &60 ;Look at definition status
+ CMPIM NODEF
+ BNE DSTA50 ;Branch if not undefined
+DSTA30
+ PLP ;Get expression status back
+ LDAIY SYMPT
+ ANDIM &FF-&60
+ [ DEF=0
+ |
+ ! 0,"DEF not zero"
+ ]
+ BVC DSTA40 ;Branch if good definition
+ ORAIM SOMEDEF ;Indicate partial definition
+DSTA40
+ STAIY SYMPT
+DSTA43
+ INY
+ LDA TVVAL
+ STAIY SYMPT
+ INY
+ LDA TVVAL+1
+ STAIY SYMPT ;Insert value
+DSTA45
+ RTS
+DSTA50
+ PLA ;Stack straight
+EDDLAB
+ LDYIM DDLAB
+DSTA60
+ JMP ERROR
+EBADSYN
+ LDYIM BADSYN
+ BRA DSTA60 ;Branch always
+DSTA70
+ BCS DSTA80 ;Branch if undefined value
+ LDYIM 0
+ JSR GETLAB ;Get the label
+ JSR GSYMB ;Look up
+ LDYIM STATOFF
+ LDAIY SYMPT
+ TAX
+ ANDIM &60
+ CMPIM CANTDEF
+ BEQ DSTA90 ;Branch if impossible to define
+ TXA
+ ANDIM &FF-&60 ;Mark as defined
+ [ DEF/=0
+ ! 0,"DEF not 0"
+ ]
+ JSR DSTA40 ;Put in value
+VALLIST
+ BIT LISTFLAG ;See if listing
+ BPL DSTA45 ;Branch if not
+ LDA TVVAL+1
+ JSR HEXNSUP
+ LDA TVVAL
+ JMP HEXSPACE ;Print out the value
+DSTA80
+ JMP EUNDSYMB ;Moan undefined symbol
+DSTA90
+ JMP EBADMAN
+;
+; ====
+; DORG
+; ====
+;
+; Handle the ORG directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DORG ROUT
+ LDA NOCODE
+ BMI #10DORG ;Branch if too late for ORG this file
+ JSR AREEXPR ;Get arithmetic expression
+ BCS DHAT10 ;Branch if bad
+ LDA TVVAL
+ STA PROGC
+ LDA TVVAL+1
+ STA PROGC+1 ;Update program counter
+ JMP SETADDR ;Set correct address for code file
+10DORG
+ LDYIM BADORG
+ BRA DSTA60 ;Moan bad ORG
+;
+; ====
+; DHAT
+; ====
+;
+; Handle the ^ directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DHAT
+ JSR AREEXPR ;Get arithmetic expression
+ BCS DHAT10 ;Branch if bad
+ LDA TVVAL
+ STA VARC
+ LDA TVVAL+1
+ STA VARC+1 ;Update variable counter
+DHAT10
+ RTS
+;
+; =====
+; DHASH
+; =====
+;
+; Handle the # directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DHASH
+ PHY ;Save current line position
+ LDYIM 0
+ JSR GETSMAN ;Look for starting label
+ BVS DHAS10 ;Branch if missing
+ LDA PASS
+ BNE DHAS10 ;Branch if on pass 2
+ JSR DPSYMB ;Define with value PROGC
+ PLA
+ BCS DHAS20 ;Branch if bad
+ PHA
+ LDYIM 8
+ LDA VARC
+ STAIY SYMPT
+ LDA VARC+1
+ INY
+ STAIY SYMPT ;Put in correct value
+DHAS10
+ PLY
+ JSR AREEXPR
+ BCS DHAT10 ;Branch if bad expression
+ CLC
+ LDA VARC
+ PHA
+ ADC TVVAL
+ STA VARC
+ LDA VARC+1
+ PHA
+ ADC TVVAL+1
+ STA VARC+1
+ PLA
+ STA TVVAL+1
+ PLA
+ STA TVVAL
+ LDA PASS
+ BNE VALLIST ;Display value on listing on pass 2
+DHAS20
+ RTS ;Return if on pass 1
+;
+; =====
+; DPERC
+; =====
+;
+; Handle the % directive
+;
+; ENTRY:- No conditions
+;
+; EXIT:-  No registers or flags preserved
+;
+DPERC
+ JSR AREEXPR
+ BCS DHAT10 ;Branch if error
+ LDA TVVAL
+ ADC PROGC
+ STA PROGC
+ LDA TVVAL+1
+ ADC PROGC+1
+ STA PROGC+1
+DPER10
+ LDA TVVAL
+ ORA TVVAL+1
+ BEQ DHAT10 ;Branch if finished
+ LDAIM 0
+ JSR CODEOUT ;Write out the byte
+ LDA TVVAL
+ BNE DPER20
+ DEC TVVAL+1
+DPER20
+ DEC TVVAL ;One less to do
+ BRA DPER10 ;Loop
+;
+; End of directive handling routines file
+;
+ LNK MASM16

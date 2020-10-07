@@ -1,0 +1,622 @@
+ TTL Macro assembler - variable allocation - > MASM01
+ OPT MASM01
+;
+; MACRO ASSEMBLER FOR SECOND PROCESSOR 6502
+; =========================================
+;
+; SECOND PROCESSOR SIDE CODE
+; ==========================
+;
+; VARIABLE AREA
+; =============
+;
+ ORG ORIGIN
+;
+; The zero page allocation
+;
+ ^ ZEROAREA
+;
+; The current symbol qualifier
+;
+QUAL # 1
+SYMBOL # 6 ;Where symbols for the table are stored
+;
+; The assembly pass number
+;
+PASS # 1
+;
+; The listing flag
+;
+LISTFLAG # 1
+;
+; The listing request flag
+;
+LISTREQ # 1
+;
+; The old listing status, before conditional assembly etc.
+;
+OLIST # 1
+;
+; The print flag
+;
+PRINT # 1
+;
+; The conditional assembly depth flags
+; The number of successful IFs (i.e. where code is included)
+; Shared with the symbol count for sorting
+;
+IFFLAG # 1
+N * IFFLAG
+;
+; The number of failed IFs
+;
+IFDEPTH # 1
+;
+; The WHILE counters
+; The number of successful WHILEs (i.e. where code is included)
+;
+WFLAG # 1
+;
+; The number of failed WHILEs
+;
+WDEPTH # 1
+;
+; A flag to indicate if LCL directives are allowed at present
+;
+LCLFLAG # 1
+;
+; A flag to indicate if we are processing text at present
+;
+INTEXT # 1
+;
+; A flag to indicate that no code has yet been produced
+;
+NOCODE # 1
+;
+; A flag to indicate that no CPU has been assumed yet
+;
+NOCPU # 1
+;
+; String length counter
+;
+SLEN # 1
+;
+; The pointer to the code currently being produced
+;
+CODEP # 2
+;
+; The local label table pointer
+; Shared with the expansion buffer pointer
+; Shared with the sort outer loop count
+;
+LSYMPT # 2
+EXPTR * LSYMPT
+I * LSYMPT
+;
+; The global symbol table pointer
+;
+SYMPT # 2
+;
+; Result from table sorting
+;
+M # 2
+;
+ [ $TURBO
+XSYMPT  * SYMPT+TXPAGE ;Extra byte for the TURBO
+;
+XM * M+TXPAGE
+ ]
+;
+; The macro parameter line pointer
+; And temporary macro depth counter used in local label computations
+; Also shared with digit counter used in local label computation
+; Also shared with the opcode table pointer
+;
+VALPTR # 2
+TMDEPTH * VALPTR+1
+DIGIT * VALPTR+1
+OPPTR * VALPTR
+;
+; A copy of the above pointer
+; Shared with the length of the current macro parameter
+; And offset in macro default table
+; Also shared with the sort inner loop counter
+;
+TABPTR # 2
+LENPARM * TABPTR
+DEFPTR * TABPTR+1
+J * TABPTR
+;
+; The end of local label table pointer
+; Shared with J-M from symbol table sorting
+;
+ELSYMPT # 2
+JMINM * ELSYMPT
+;
+; The pointer into the macro parameter table
+; Shared with 2J for table sorting
+;
+MACPTR # 1
+TWOJ * MACPTR
+;
+; The offset of the local variable table
+; Also the end of the macro parameter table +1
+;
+LOCOFF # 1
+;
+; The current line pointer in the source file
+; Shared with 2(J-M)
+;
+LPTR # 2
+TWOJM * LPTR
+;
+; The current expanded line pointer
+; Shared with dereferenced TWOJ
+;
+LINEPTR # 2
+SYMB1 * LINEPTR
+;
+; The error message table pointer
+; Shared with the string dereference pointer
+; Also shared with dereferenced TWOJM
+;
+ERRTAB # 2
+DRSTRING * ERRTAB
+SYMB2 * ERRTAB
+;
+ [ $TURBO
+XSYMB1 * SYMB1+TXPAGE
+XSYMB2 * SYMB2+TXPAGE
+ ]
+;
+; The current character pointer
+; Shared with the sort type
+;
+CHARPTR # 1
+SORTTYPE * CHARPTR
+;
+; The offset of the end of the local variable table
+;
+ENDOFF # 1
+;
+; The number of errors this assembly
+;
+ERRORS # 2
+;
+; The current line number
+; Shared with the decimal symbol count
+;
+LNNUM # 2
+NDEC * LNNUM
+;
+; The page number
+;
+PGNUM # 2
+;
+; The number of characters on the current line so far
+;
+WIDTH # 1
+;
+; The maximum number of characters on a line
+;
+MWIDTH # 1
+;
+; The number of lines on the current page
+;
+LENGTH # 1
+;
+; The maximum number of lines on a page
+;
+MLENGTH # 1
+;
+; The number of columns available for code printing
+;
+COLUMN # 1
+;
+; The program counter
+;
+PROGC # 2
+;
+; The variable pointer
+;
+VARC # 2
+;
+; The local label status type byte
+;
+LTYPE # 1
+;
+; Two pointers used in message printing
+;
+MESPTR # 2
+MESPT1 # 2
+;
+; The CPU type
+; Top bit set <=> CMOS 6502
+;
+CPU # 1
+;
+; The directive number
+;
+DIRNUM # 1
+;
+; The pointer to the transmit block for a user OSWORD
+;
+TBLOCK # 2
+;
+; The pointer to the receive block for a user OSWORD
+;
+RBLOCK # 2
+;
+; Temporary store for Y
+;
+TEMPY # 1
+ [ FS = DFS ;Only need these for the DFS
+;
+; The source, object and starting drives
+;
+SDRIVE # 1
+ODRIVE # 1
+DRIVE # 1
+ ]
+;
+; A byte to indicate whether paging is required
+;
+PAGEBYTE # 1
+;
+; The stop on error flag
+;
+STOP # 1
+;
+; The current opcode value and status
+;
+OPCVAL # 1
+OPCSTAT # 1
+;
+; The software stack pointer
+;
+STAPTR # 1
+;
+; The parameter stack pointer
+;
+PSTAPTR # 1
+;
+; The expression evaluation stack pointer
+;
+ESTPTR # 1
+;
+; The heap pointer
+;
+HEAPPTR # 2
+;
+; The heap returned allocation
+;
+HEAPLOC # 2
+;
+; Variables used in expression evaluation
+;
+FORCED # 1 ;To indicate whether the expression should be forced
+DEFINED # 1 ;To indicate whether the expression is defined
+TTYPE # 1 ;The type of the current token
+TVALUE # 4 ;The value of the current token
+TVTYPE * TVALUE ;The type of the value
+TVPTR * TVALUE+1 ;The value or pointer to it
+TVVAL * TVPTR
+TVLEN * TVALUE+3 ;The length of the value in the case of a string
+PREVOP # 1 ;The previous operator
+;
+; The arithmetic operand and result variables
+;
+OPRND1 # 2
+OPRND2 # 2
+RESLT # 2
+;
+; The operand types and lengths
+;
+OP1TYPE # 1
+OP1LEN # 1
+OP2TYPE # 1
+OP2LEN # 1
+;
+; A byte to give the type of an assembly time variable
+; viz:- LOGICAL/ARITHMETIC/STRING
+;
+TYPE # 1
+;
+; A byte to indicate that the current opcode has a zero page option
+; MI <=> zero page option
+;
+INDFLAG # 1
+;
+; The macro depth counter
+;
+MDEPTH # 1
+;
+; The error pending flag
+; MI => error pending, PL => no error pending
+;
+ERRSW # 1
+;
+; The pointer to the current position in the local label table
+;
+LSPTR # 2
+;
+; The returned value from tubed OSWORD calls
+;
+RETVAL # 1
+;
+; The xref file handle
+;
+HANDLE # 1
+;
+; The no NEWLINE request indicator
+;
+NONEW # 1
+;
+; The macro definition indicator
+;
+MACDEF # 1
+;
+; A flag to indicate wrap around on the global hash table
+;
+WRAPFLAG # 1
+;
+; Variables used for GET command
+;
+DECIMAL # 2 ;The current file offset
+OFFSET # 2 ;The final file offset
+DIGOFF # 2 ;The offset of the digits in the file name
+;
+; A byte for use by BIT
+;
+FF # 1
+;
+; The DFS control block
+;
+DCB # &12
+LOADAD * DCB+&02 ;Offset of the load address
+EXADDR * DCB+&06 ;Offset of the execution address
+DATAAD * DCB+&0A ;Offset of the data start address
+ENDADD * DCB+&0E ;Offset of the data end address
+;
+; The current macro name
+;
+MACNAME # 6
+;
+; The name of the current routine
+;
+ROUTINE # 6
+;
+; The BGBP control block
+;
+BGBP # 13
+;
+; The three file name buffers
+;
+FIRFILE # FILLEN+1
+CURFILE # FILLEN+1
+OBJFILE # FILLEN+3
+;
+; The start of the macro table
+;
+MACSTART #  2
+XMACSTART * MACSTART+TXPAGE
+;
+; The list within conditional assembly byte
+;
+TERSE # 1
+;
+; The enter information in the local label table for macros byte
+;
+MLEVEL # 1
+;
+ [ $TURBO
+;
+; The start of the macro names table
+;
+MACNME #  2
+XMACNME * MACNME+TXPAGE
+;
+; The pointer to the current macro being defined
+;
+NAMPTR #  2
+XNAMPTR * NAMPTR+TXPAGE
+;
+; The macro table consistency byte
+;
+CONSIST #  1
+;
+; The software stack pointer
+;
+MSTPTR #  1
+;
+; The macro definition indicator
+;
+MACDEV #  1
+;
+; The macro expansion indicator
+;
+MACIND #  1
+;
+;The pointer to the next line of a macro expansion/definition
+;
+MACLNE #  2
+XMACLNE * MACLNE+TXPAGE
+;
+; The length of the current macro definition/expansion
+;
+MACLEN #  2
+;
+; The pointer to the last line passed back in a macro expansion
+;
+CURLINE #  2
+XCURLINE * CURLINE+TXPAGE
+;
+; The length remaining after CURLINE
+;
+CURLEN #  2
+;
+; The pointer to the current default block
+;
+DEFBLK #  2
+XDEFBLK * DEFBLK+TXPAGE
+;
+; The pointer to the current local variable and parameter name block
+;
+LOCBLK #  2
+XLOCBLK * LOCBLK+TXPAGE
+;
+; A spare pointer
+;
+SPTR #  2
+XSPTR * SPTR+TXPAGE
+;
+; A temporary location for the use of ONSTACK
+;
+TEMP #  1
+;
+; The pointer returned from LOOK
+;
+MACPTER # 2
+XMACPTER * MACPTER+TXPAGE
+;
+; Top of memory
+;
+HIMEM # 2
+;
+; A temporary store
+;
+REG # 1
+;
+ ]
+ZSTOP # 0
+;
+; Check not off end of zero page allocation
+;
+ [ @ > ZEROEND
+ ! 8,"Zero page over-allocated"
+ ]
+;
+; Page one allocation
+;
+ ^ PAGE1
+;
+; The user input buffer
+;
+INLINE # INLENGTH
+;
+; Check not over allocated page 1
+;
+ [ @-&200:SHR: 15=0
+ ! 0,"Page two over allocated"
+ ]
+;
+; The start of the global symbol table
+;
+ ^ &400
+;
+SYMSTART # SYMLEN
+ [ $TURBO
+SYMSHI * SYMSTART:SHR: 8 +&100;Move GLOBAL to volume 1 by adding &100
+ |
+SYMSHI * SYMSTART:SHR: 8
+ ]
+;
+; The end of the global symbol table
+;
+SYMEND * @
+ [ $TURBO
+SYMEHI * SYMEND:SHR: 8 +&100
+ |
+SYMEHI * SYMEND:SHR: 8
+ ]
+;
+; The start of the large tables in zero volume
+;
+ [ $TURBO
+ ^ &400
+ |
+ ]
+;
+; The start of the local label table
+;
+LOCSTART # LOCLEN
+LOCSHI * LOCSTART:SHR: 8
+;
+; The end of the local label table
+;
+LOCEND * @
+LOCEHI * LOCEND:SHR: 8
+;
+; The macro parameter and local variable table
+;
+PARMTAB # &100
+;
+; The macro parameter default table
+;
+DEFTAB # &100
+;
+; The macro line, raw from the definition
+;
+MACLINE # &80
+;
+; The expansion line buffer,
+; for when macro parameters are substituted
+;
+EXBUFF # &80
+;
+; The expansion buffer for assembly time character variable substitution
+;
+EXBF2 # &80
+;
+; The title buffer
+;
+TITLE # &80
+;
+; The WHILE, macro expansion and conditional assembly stack
+;
+STACK # &100
+;
+; A similar stack to STACK but called MSTACK
+;
+ [ $TURBO
+MSTACK # &100
+FRAME * 6 ;Size of entry on the mstack;
+ ]
+;
+; The parameter block stack
+;
+PSTACK # &700
+;
+; The expression evaluation stack
+;
+ESTACK # &100
+;
+; The heap area for strings
+;
+HEAP # &700 ;7 pages for HEAP
+;
+; The code area
+;
+ [ $TURBO
+CODE * &4000
+ |
+CODE * &7800
+ ]
+;
+; Check not overwriting CODE with HEAP
+;
+ [ CODE < @
+ ! 8,"HEAP overwriting CODE"
+ ]
+;
+; The text area
+;
+ [ $TURBO
+TEXT * &4400
+ |
+TEXT * &7B00
+ ]
+;
+; End of variable area file
+;
+ LNK MASM02
