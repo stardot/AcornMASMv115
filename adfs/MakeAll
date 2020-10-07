@@ -1,0 +1,60 @@
+*|> AsmMasm
+*TurMasm
+w 78
+l 118
+asm NorHdr
+
+get x.masm02
+03
+n&2000
+get x.masm05
+22
+p
+get x.masm44
+
+p
+save NewMasm
+&2000
+&2000+&3800
+&C000
+T
+&C000
+T
+*| The new 6502 Macro Assembler is NewMasm
+
+*|> AsmIoMasm
+asm Masm50
+
+get x.masm51
+53
+n&2000
+save NewIoMasm
+&2000
+&2000+&400
+&7800
+H
+&7800
+H
+*| The new 6502 Macro Assembler Host Code is NewIoMasm
+
+*|> AsmTurMasm
+asm TurHdr
+
+get x.masm02
+03
+n&8000
+get x.masm05
+24
+p
+get x.masm30
+31
+p
+save NewTurMasm
+&8000
+&C800
+&B000
+T
+
+*| The new 6502 Turbo Macro Assembler is NewTurMasm
+
+*INFO New*Masm
