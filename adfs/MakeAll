@@ -1,4 +1,4 @@
-*|> AsmMasm
+*|> MakeAll
 *TurMasm
 w 78
 l 118
@@ -22,7 +22,6 @@ T
 T
 *| The new 6502 Macro Assembler is NewMasm
 
-*|> AsmIoMasm
 asm Masm50
 
 get x.masm51
@@ -37,7 +36,6 @@ H
 H
 *| The new 6502 Macro Assembler Host Code is NewIoMasm
 
-*|> AsmTurMasm
 asm TurHdr
 
 get x.masm02
